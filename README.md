@@ -32,7 +32,7 @@ The case holds the T114's own display beside the Pi's screen. The Pi screen show
 
 ## Quick start
 
-1. **Configure.** Open [`configurator/index.html`](configurator/index.html) in a browser. It runs entirely locally and uploads nothing. Choose your hardware and options, then download the bundle.
+1. **Configure.** Open the [configurator](https://2themaxthestairfax.github.io/Super-Mesh-Stack/) (or [`configurator/index.html`](configurator/index.html) from a clone, which works offline). It runs entirely in your browser and uploads nothing. Choose your hardware and options, then download the bundle.
 2. **Prepare the SD card.** Flash Raspberry Pi OS Lite (64-bit) with Raspberry Pi Imager, then append the bundle's `config.txt.append` to `config.txt` on the boot partition.
 3. **Install on the Pi.**
 
