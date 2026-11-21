@@ -39,6 +39,7 @@ INT_CONFIRM_S = 10
 ROWS = 4            # menu rows under the header
 SCREEN_OFF_S = 15   # backlight off after this long idle - same as the T114's own screen (AUTO_OFF_MILLIS)
 TZ = ZoneInfo(os.environ.get('SMS_TZ', 'UTC'))
+TITLE = os.environ.get('SMS_TITLE', '').strip() or 'Mesh Stack'
 STATUS_FILE = '/opt/mesh-stack/status.json'
 POWER_FILE = '/opt/mesh-stack/power.json'
 DB_FILE = '/opt/mesh-stack/telemetry.sqlite'
@@ -319,7 +320,7 @@ def repaint_header(img):
 def dot(d, x, y, color):
     d.ellipse([x, y, x + 7, y + 7], fill=color)
 
-def draw_msg(w, h, lines, title="MESH STACK", color=WARN):
+def draw_msg(w, h, lines, title=TITLE, color=WARN):
     """Centered message; every line word-wraps to the screen (max 4 rows shown)."""
     img, d = frame(w, h, title)
     rows = []
@@ -332,7 +333,7 @@ def draw_msg(w, h, lines, title="MESH STACK", color=WARN):
     return img
 
 def draw(w, h, ip, nas, disk):
-    img, d = frame(w, h, "MESH STACK")
+    img, d = frame(w, h, TITLE)
     st, pw = read_json(STATUS_FILE), read_json(POWER_FILE)
 
     # Radio

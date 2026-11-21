@@ -34,6 +34,7 @@ FLASH_LOG = f"{APP_DIR}/flash.log"
 FLASH_SH = f"{APP_DIR}/flash.sh"
 FW_DIR = f"{APP_DIR}/firmware"
 PORT = int(os.environ.get("SMS_WEB_PORT", "80"))
+TITLE = os.environ.get("SMS_TITLE", "").strip() or "Mesh Stack"
 MAX_SEND = 180
 
 app = Bottle()
@@ -393,9 +394,9 @@ def page(active, body, wide=False):
     heading = dict(TABS).get(active, "Mesh Stack")
     return f"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>Mesh Stack &middot; {heading}</title><link rel=icon href="/static/favicon.ico">
+<title>{esc(TITLE)} &middot; {heading}</title><link rel=icon href="/static/favicon.ico">
 <style>{CSS}</style></head><body>
-<header><img class=logo src="/static/logo.png" alt=""><span class=title>Mesh Stack</span><nav>{nav}</nav></header>
+<header><img class=logo src="/static/logo.png" alt=""><span class=title>{esc(TITLE)}</span><nav>{nav}</nav></header>
 <main class="{'wide' if wide else ''}"><h1 class=page>{heading}</h1><p class=sub>{bar}</p>{body}</main></body></html>"""
 
 

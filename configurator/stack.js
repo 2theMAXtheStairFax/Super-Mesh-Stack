@@ -15,6 +15,7 @@
     pi: 'pi3',
     hostname: 'mesh-stack',
     tz: 'UTC',
+    title: 'Mesh Stack',
     link: 'uart',
     lcd: true,
     argon: false,
@@ -82,6 +83,9 @@
 
     if (!PIS[cfg.pi]) err('pi', 'Pick a board.');
     else if (!PIS[cfg.pi].tested) warnings.push(`${PIS[cfg.pi].label} is untested; the 3B is what this stack was built on.`);
+
+    const title = String(cfg.title).trim();
+    if (!title || title.length > 24 || bad(title)) err('title', '1 to 24 characters; no quotes or backslashes.');
 
     if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i.test(cfg.hostname)) err('hostname', 'Letters, digits and hyphens; no leading or trailing hyphen.');
 
@@ -157,6 +161,7 @@
     c.botChannel = String(c.botChannel || '').trim().toLowerCase();
     c.regionScope = String(c.regionScope || '').trim().toLowerCase().replace(/^#/, '');
     c.cmdPrefix = String(c.cmdPrefix).trim().toLowerCase();
+    c.title = String(c.title).trim();
     return c;
   }
 
@@ -168,6 +173,7 @@
     const v = (perCell) => (perCell * c.cells).toFixed(2);
     const kv = [
       ['SMS_TZ', c.tz],
+      ['SMS_TITLE', c.title],
       ['SMS_SERIAL', c.link === 'uart' ? '/dev/serial0' : '/dev/ttyACM0'],
       ['SMS_BOT_CHANNEL_IDX', botIdx],
       ['SMS_WX_CHANNEL_IDX', botIdx],

@@ -59,6 +59,13 @@ test('env file reflects the answers', () => {
   assert.equal(e.SMS_AP_PASS, 'hunter22hunter');
 });
 
+test('header title', () => {
+  assert.ok(Stack.validate(base({ title: '' })).errors.title);
+  assert.ok(Stack.validate(base({ title: 'x'.repeat(25) })).errors.title);
+  assert.ok(Stack.validate(base({ title: "it's" })).errors.title);
+  assert.equal(env(Stack.generate(base({ title: '  Field Node 7 ' }))).SMS_TITLE, 'Field Node 7');
+});
+
 test('closing app access sets port 0; no bot channel means DM-only', () => {
   const e = env(Stack.generate(base({ appAccess: false, botChannel: '' })));
   assert.equal(e.SMS_MUX_PORT, '0');
