@@ -166,6 +166,16 @@ test('GPS: without one the coverage log is switched off, since it has no positio
   assert.equal(env(Stack.generate(base({ gps: 'l76k' }))).STACK_GPS, 'l76k');
 });
 
+test('form layout: home Wi-Fi fields are always visible; only the mobile router is behind its checkbox', () => {
+  const html = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'index.html'), 'utf8');
+  const labelFor = (name) => html.slice(html.lastIndexOf('<label', html.indexOf(`name="${name}"`)), html.indexOf('</label>', html.indexOf(`name="${name}"`)));
+  for (const name of ['homeSsid', 'homePass', 'wifiCountry']) assert.doesNotMatch(labelFor(name), /data-show/, name);
+  const mobileBlock = html.slice(html.indexOf('data-show="mobile"'), html.indexOf('</div>', html.indexOf('data-show="mobile"')));
+  assert.match(mobileBlock, /name="mobileSsid"/);
+  assert.match(mobileBlock, /name="mobilePass"/);
+  assert.doesNotMatch(html.slice(0, html.indexOf('data-show="mobile"')), /name="mobileSsid"/);
+});
+
 test('closing app access sets port 0; no bot channel means DM-only', () => {
   const e = env(Stack.generate(base({ appAccess: false, botChannel: '' })));
   assert.equal(e.SMS_MUX_PORT, '0');

@@ -67,13 +67,13 @@
         <small>The node falls back to this AP when no known network is in range, so it is never unreachable.</small>
       </label>
       <label>Home Wi-Fi name (SSID) <input name="homeSsid" maxlength="32" placeholder="optional"><small>Your own network. Leave blank if you set Wi-Fi in Raspberry Pi Imager and have nothing to add.</small></label>
-      <label data-show-field="homeSsid">Home Wi-Fi password <input name="homePass" type="password" autocomplete="off"></label>
+      <label>Home Wi-Fi password <input name="homePass" type="password" autocomplete="off"><small>Needed when you enter a network name.</small></label>
+      <label>Wi-Fi country <input name="wifiCountry" size="3" maxlength="2" placeholder="US"><small>Two-letter code, needed when you add a network. Without it the Wi-Fi radio stays disabled.</small></label>
       <label class="check"><input type="checkbox" name="mobile"> I also use a mobile router or phone hotspot</label>
       <div class="sub" data-show="mobile">
         <label>Mobile router name (SSID) <input name="mobileSsid" maxlength="32"></label>
         <label>Mobile router password <input name="mobilePass" type="password" autocomplete="off"></label>
       </div>
-      <label data-show-any="homeSsid,mobile">Wi-Fi country <input name="wifiCountry" size="3" maxlength="2" placeholder="US"><small>Two-letter code. Without it the Wi-Fi radio stays disabled.</small></label>
       <label class="check"><input type="checkbox" name="appAccess"> Let the MeshCore phone app connect over the network</label>
       <div class="sub" data-show="appAccess">
         <label>TCP port <input name="appPort" type="number" min="1024" max="65535"></label>

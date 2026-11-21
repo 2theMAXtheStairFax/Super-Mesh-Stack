@@ -54,8 +54,6 @@
 
   function toggles(cfg) {
     form.querySelectorAll('[data-show]').forEach((n) => { n.hidden = !cfg[n.dataset.show]; });
-    form.querySelectorAll('[data-show-field]').forEach((n) => { n.hidden = !cfg[n.dataset.showField]; });
-    form.querySelectorAll('[data-show-any]').forEach((n) => { n.hidden = !n.dataset.showAny.split(',').some((k) => cfg[k]); });
     el('gpioShutdown').disabled = cfg.argon;
     el('wardrive').disabled = cfg.gps === 'none';
     if (cfg.argon) el('gpioShutdown').checked = false;
