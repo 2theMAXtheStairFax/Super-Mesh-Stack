@@ -1,5 +1,7 @@
 # Super Mesh Stack
 
+by [2theMAX](https://github.com/2theMAXtheStairFax)
+
 A complete [MeshCore](https://meshcore.co.uk/) node for the Raspberry Pi and Heltec T114 radio, with a configurator that generates your install bundle.
 
 <p align="center">
