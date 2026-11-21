@@ -209,6 +209,7 @@ restart needed.
 
 | Key | Meaning |
 |---|---|
+| `title` | header title on the screen and the web UI (up to 24 characters; blank = `SMS_TITLE`, then `Mesh Stack`) |
 | `bot_channel_idx` | channel the bot replies on; `-1` = DMs only |
 | `cmd_prefix` | on a channel the bot only answers `<prefix> wx` / `<prefix>-wx` / bare `<prefix>`; DMs also take bare `wx` |
 | `wx_channel_idx` | channel the Weather tab's Refresh button sends `<prefix> wx` on |
@@ -225,6 +226,10 @@ fixed paths: `SMS_SERIAL` (`/dev/serial0`; `/dev/ttyACM0` if the T114 is on USB)
 (`/opt/mesh-stack/telemetry.sqlite`), `SMS_WEATHER_DB`
 (`/opt/mesh-stack/weather.sqlite`, `readings` schema — see
 [`../docs/notes/weather.md`](../docs/notes/weather.md)).
+
+### Names
+
+The **header title** is display-only and applies within a few seconds. The **radio name** is the name other nodes see: renaming it from the Config tab queues the change for the bot, which sets it on the radio (up to 31 bytes). The mesh learns the new name from your next advert, so send one from the Contacts tab.
 
 ### Region scopes
 

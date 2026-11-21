@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, quote, urlparse
 from bottle import Bottle, request, response, redirect, static_file, HTTPError
 
 import about
+import names
 import regions
 
 APP_DIR = os.environ.get("SMS_DIR", "/opt/mesh-stack")
@@ -35,7 +36,6 @@ FLASH_LOG = f"{APP_DIR}/flash.log"
 FLASH_SH = f"{APP_DIR}/flash.sh"
 FW_DIR = f"{APP_DIR}/firmware"
 PORT = int(os.environ.get("SMS_WEB_PORT", "80"))
-TITLE = os.environ.get("SMS_TITLE", "").strip() or "Mesh Stack"
 MAX_SEND = 180
 
 app = Bottle()
@@ -57,6 +57,10 @@ def status():
 def cfg():
     s = status().get("cfg") or {}
     return {**s, **_json(CONFIG_PATH, {})}
+
+
+def site_title():
+    return names.resolve_title(cfg().get("title"), os.environ.get("SMS_TITLE"))
 
 
 def channels():
@@ -396,9 +400,9 @@ def page(active, body, wide=False):
     heading = dict(TABS).get(active, "Mesh Stack")
     return f"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
-<title>{esc(TITLE)} &middot; {heading}</title><link rel=icon href="/static/favicon.ico">
+<title>{esc(site_title())} &middot; {heading}</title><link rel=icon href="/static/favicon.ico">
 <style>{CSS}</style></head><body>
-<header><img class=logo src="/static/logo.png" alt=""><span class=title>{esc(TITLE)}</span><nav>{nav}</nav></header>
+<header><img class=logo src="/static/logo.png" alt=""><span class=title>{esc(site_title())}</span><nav>{nav}</nav></header>
 <main class="{'wide' if wide else ''}"><h1 class=page>{heading}</h1><p class=sub>{bar}</p>{body}</main></body></html>"""
 
 
@@ -782,6 +786,15 @@ def advert_position():
     redirect("/config")
 
 
+@app.post("/radio/name")
+def radio_name():
+    name = (request.forms.getunicode("name") or "").strip()
+    if (err := names.check_radio_name(name)):
+        raise HTTPError(400, err)
+    queue_cmd("set_name", name)
+    redirect("/config")
+
+
 @app.post("/contacts/refresh")
 def contacts_refresh():
     queue_cmd("refresh_contacts")
@@ -982,6 +995,7 @@ def config_get():
     return page("/config", f"""
 <form method=post action=/config>
 <table class=cfg>
+<tr><td>Header title (screen and web)</td><td><input type=text name=title maxlength={names.TITLE_MAX} placeholder="{esc(names.DEFAULT_TITLE)}" value="{esc(c.get("title", ""))}"></td></tr>
 <tr><td>Bot reply channel</td><td><select name=bot_channel_idx>{sel("b", c.get("bot_channel_idx", -1))}</select></td></tr>
 <tr><td>Command prefix</td><td><input type=text name=cmd_prefix value="{esc(c.get("cmd_prefix", "wx"))}"></td></tr>
 <tr><td>Default send channel</td><td><select name=web_send_default_idx>{sel("d", c.get("web_send_default_idx", 0))}</select></td></tr>
@@ -1007,7 +1021,12 @@ def config_get():
 <span>Position in adverts: <b>{"unknown" if status().get("adv_loc") is None else "on" if status().get("adv_loc") else "off"}</b></span>
 <button name=on value={0 if status().get("adv_loc") else 1}{" disabled" if status().get("adv_loc") is None else ""}>Turn {"off" if status().get("adv_loc") else "on"}</button>
 </form>
-<p class=sub>Saved to <code>config.json</code>; the bot picks it up within ~5 s.</p>
+<form class=row method=post action=/radio/name>
+<span>Radio name: <b>{esc(status().get("node_name") or "unknown")}</b></span>
+<input type=text name=name maxlength={names.RADIO_NAME_MAX} value="{esc(status().get("node_name") or "")}" required>
+<button>Rename</button>
+</form>
+<p class=sub>Saved to <code>config.json</code>; the bot picks it up within ~5 s. A new radio name reaches the mesh with the next advert (Contacts tab).</p>
 <p class=sub>Radio flood scope: <code>{("#" + esc(status().get("region_scope", ""))) if status().get("region_scope") else "none (unscoped)"}</code>.
 A scope applies to every flood the radio sends, adverts and DMs without a known path included, and only repeaters carrying it forward them. Leave it off on meshes that don't use scopes.</p>""")
 
@@ -1015,12 +1034,16 @@ A scope applies to every flood the radio sends, adverts and DMs without a known 
 @app.post("/config")
 def config_post():
     f = request.forms
+    title = (f.getunicode("title") or "").strip()
+    if (err := names.check_title(title)):
+        raise HTTPError(400, err)
     scope = regions.normalize(f.get("region_scope", ""))
     if not regions.valid(scope):
         raise HTTPError(400, f"Region scope: lowercase letters, digits and hyphens, up to {regions.MAX_LEN} characters")
     if f.get("region_scope_on") and not scope:
         raise HTTPError(400, "Pick a region scope before turning it on")
     new = {**_json(CONFIG_PATH, {}),      # keep settings this form doesn't show
+        "title": title,
         "bot_channel_idx": int(f.get("bot_channel_idx", -1)),
         "cmd_prefix": (f.get("cmd_prefix", "wx") or "wx").strip().lower(),
         "web_send_default_idx": int(f.get("web_send_default_idx", 0)),

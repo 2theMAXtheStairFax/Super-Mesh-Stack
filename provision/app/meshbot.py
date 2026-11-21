@@ -44,6 +44,7 @@ from meshcore import MeshCore, EventType
 
 import fox
 import mux
+import names
 import regions
 import wardrive
 
@@ -590,6 +591,21 @@ async def refresh_adv_loc() -> None:
         _adv["loc"] = None
 
 
+async def set_radio_name(name: str) -> str:
+    """Rename the radio (web Config tab). The mesh sees it from the next advert."""
+    global _node_name
+    name = name.strip()
+    if (err := names.check_radio_name(name)):
+        return err
+    res = await _mc.commands.set_name(name)
+    if res.type == EventType.ERROR:
+        return f"refused: {res.payload}"
+    _node_name = name
+    if _wd is not None:
+        _wd.my_name = name
+    return f"radio renamed to {name!r}"
+
+
 async def set_adv_pos(on: int) -> bool:
     """Position in adverts on/off from the screen or web. The radio saves it in its own prefs."""
     try:
@@ -823,6 +839,8 @@ async def drain_cmdq() -> None:
             elif kind == "wx_ask":
                 await ask_weather(dm=False, src="web")
                 note = _wx["result"]
+            elif kind == "set_name":
+                note = await set_radio_name(arg)
             elif kind == "advert_pos":
                 on = int(arg == "1")
                 note = f"advert position {'on' if on else 'off'}" if await set_adv_pos(on) else "refused"

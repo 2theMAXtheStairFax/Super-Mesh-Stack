@@ -15,6 +15,7 @@ from st7735 import ST7735
 import navswitch as nav
 import about
 import fox
+import names
 import regions
 
 FONT_DIR = '/usr/share/fonts/truetype/dejavu/'
@@ -40,7 +41,6 @@ INT_CONFIRM_S = 10
 ROWS = 4            # menu rows under the header
 SCREEN_OFF_S = 15   # backlight off after this long idle - same as the T114's own screen (AUTO_OFF_MILLIS)
 TZ = ZoneInfo(os.environ.get('SMS_TZ', 'UTC'))
-TITLE = os.environ.get('SMS_TITLE', '').strip() or 'Mesh Stack'
 STATUS_FILE = '/opt/mesh-stack/status.json'
 POWER_FILE = '/opt/mesh-stack/power.json'
 DB_FILE = '/opt/mesh-stack/telemetry.sqlite'
@@ -321,9 +321,12 @@ def repaint_header(img):
 def dot(d, x, y, color):
     d.ellipse([x, y, x + 7, y + 7], fill=color)
 
-def draw_msg(w, h, lines, title=TITLE, color=WARN):
+def get_title():
+    return names.resolve_title(read_json(CONFIG_FILE).get('title'), os.environ.get('SMS_TITLE'))
+
+def draw_msg(w, h, lines, title=None, color=WARN):
     """Centered message; every line word-wraps to the screen (max 4 rows shown)."""
-    img, d = frame(w, h, title)
+    img, d = frame(w, h, title or get_title())
     rows = []
     for i, line in enumerate(lines):
         rows += [(r, color if i == 0 else DIM) for r in wrap(d, clean(str(line)), F_BODY, w - 8)]
@@ -334,7 +337,7 @@ def draw_msg(w, h, lines, title=TITLE, color=WARN):
     return img
 
 def draw(w, h, ip, nas, disk):
-    img, d = frame(w, h, TITLE)
+    img, d = frame(w, h, get_title())
     st, pw = read_json(STATUS_FILE), read_json(POWER_FILE)
 
     # Radio
