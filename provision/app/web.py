@@ -15,7 +15,9 @@ import os
 import sqlite3
 import subprocess
 import time
+from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, quote, urlparse
+from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
 from bottle import Bottle, request, response, redirect, static_file, HTTPError
 
@@ -1065,8 +1067,9 @@ def config_post():
         "fox_reserve_pct": min(90, max(0, int(f.get("fox_reserve_pct", 20) or 0))),
     }
     try:
-        with open(CONFIG_PATH, "w") as fh:
+        with open(CONFIG_PATH + ".tmp", "w") as fh:
             json.dump(new, fh, indent=2)
+        os.replace(CONFIG_PATH + ".tmp", CONFIG_PATH)
     except OSError as e:
         raise HTTPError(500, f"write failed: {e}")
     redirect("/config")
@@ -1171,5 +1174,22 @@ def events():
     ) or "(no messages)"
 
 
+class _Server(ThreadingMixIn, WSGIServer):
+    """One thread per connection: an idle browser pre-connect must not stall everyone else."""
+    daemon_threads = True
+    request_queue_size = 32
+
+
+class _Handler(WSGIRequestHandler):
+    timeout = 30     # drop connections that never send a request
+
+    def log_message(self, *args):
+        pass
+
+
+def make_web_server(port, host="0.0.0.0"):
+    return make_server(host, port, app, server_class=_Server, handler_class=_Handler)
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, quiet=True)
+    make_web_server(PORT).serve_forever()
