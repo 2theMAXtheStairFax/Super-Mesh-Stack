@@ -13,7 +13,10 @@ APP_USER="${SUDO_USER:-}"
 [ -n "$APP_USER" ] && [ "$APP_USER" != root ] || { echo "run as a normal user with sudo, not as root" >&2; exit 1; }
 
 [ -f "$STACK_ENV" ] || { echo "no $STACK_ENV - build one at the configurator, or copy stack.env.example" >&2; exit 1; }
-set -a; . "$STACK_ENV"; set +a
+set -a
+# shellcheck source=/dev/null
+. "$STACK_ENV"
+set +a
 
 : "${STACK_LCD:=1}" "${STACK_POWER:=0}" "${STACK_FOX:=0}" "${STACK_BRIDGE:=0}" "${STACK_ARGON:=0}"
 : "${STACK_HARDEN:=1}" "${STACK_AVAHI:=1}" "${STACK_UART:=1}" "${STACK_PLATFORMIO:=0}"

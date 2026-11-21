@@ -34,6 +34,7 @@ STATE=/var/lib/mesh-stack/netmode.conf
 PRIO_HI=20 PRIO_LO=10           # NetworkManager autoconnect priorities: preferred / other
 
 AP=off NET=auto
+# shellcheck source=/dev/null
 [ -r "$STATE" ] && . "$STATE"
 
 save() {
