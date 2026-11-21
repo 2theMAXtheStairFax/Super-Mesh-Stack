@@ -1171,7 +1171,7 @@ def about_get():
         for name, role, lic, url in about.CREDITS)
     return page("/about", f"""
 <table class=cfg>
-<tr><td>Project</td><td><b>{esc(about.NAME)}</b></td></tr>
+<tr><td>Project</td><td><b>{esc(about.NAME)}</b> {esc(about.BYLINE)}</td></tr>
 <tr><td>Version</td><td>{esc(about.VERSION)}</td></tr>
 <tr><td>Radio firmware</td><td>{esc(s.get("fw") or "unknown")}</td></tr>
 <tr><td>License</td><td>{esc(about.LICENSE)}</td></tr>

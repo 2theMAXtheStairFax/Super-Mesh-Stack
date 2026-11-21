@@ -688,6 +688,7 @@ class UI:
 
     def about_items(self):
         return [(f"v{about.VERSION}", lambda: self.show_flash(about.NAME, f"version {about.VERSION}", f"{about.LICENSE} license")),
+                (about.BYLINE, lambda: self.show_flash(about.NAME, about.BYLINE)),
                 ("Credits", lambda: self.push("CREDITS", self.credits_items))]
 
     def credits_items(self):

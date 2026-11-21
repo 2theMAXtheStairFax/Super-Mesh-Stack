@@ -15,6 +15,10 @@ class AboutTest(unittest.TestCase):
             self.assertIn(name.replace("&", "&amp;"), html)
             self.assertIn(url, html)
 
+    def test_byline_is_shown_on_the_page(self):
+        self.assertEqual(about.BYLINE, "by 2theMAX")
+        self.assertIn("<b>Super Mesh Stack</b> by 2theMAX", call("/about")[2])
+
     def test_tab_is_in_the_nav(self):
         self.assertIn('href="/about"', call("/about")[2])
 

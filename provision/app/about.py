@@ -3,6 +3,8 @@
 NAME = "Super Mesh Stack"
 VERSION = "0.1.0"
 LICENSE = "MIT"
+AUTHOR = "2theMAX"
+BYLINE = f"by {AUTHOR}"
 REPO = "https://github.com/2theMAXtheStairFax/Super-Mesh-Stack"
 
 
