@@ -56,7 +56,8 @@ BAUD = int(os.environ.get("SMS_BAUD", "115200"))
 MUX = os.environ.get("SMS_MUX", "1") != "0"
 MUX_LOCAL_PORT = int(os.environ.get("SMS_MUX_LOCAL_PORT", "5001"))
 MUX_PORT = int(os.environ.get("SMS_MUX_PORT", "5000"))
-MUX_ALLOW = [n for n in os.environ.get("SMS_MUX_ALLOW", "").split(",") if n]   # extra CIDRs, e.g. the home LAN
+MUX_ALLOW = [n for n in os.environ.get("SMS_MUX_ALLOW", "").split(",") if n]   # extra CIDRs beyond the node's own networks
+MUX_LAN = os.environ.get("SMS_MUX_LAN", "1") != "0"   # also admit peers on the node's own private networks
 DB_PATH = os.environ.get("SMS_DB", f"{APP_DIR}/telemetry.sqlite")
 STATUS_PATH = os.environ.get("SMS_STATUS", f"{APP_DIR}/status.json")
 CHANNELS_PATH = os.environ.get("SMS_CHANNELS", f"{APP_DIR}/channels.json")
@@ -1428,7 +1429,7 @@ async def main() -> None:
     await fox_bot_switched()          # note the starting state: a restart doesn't announce
     if MUX:
         mux_task = asyncio.create_task(
-            mux.supervise(SERIAL, BAUD, MUX_LOCAL_PORT, MUX_PORT, MUX_ALLOW))
+            mux.supervise(SERIAL, BAUD, MUX_LOCAL_PORT, MUX_PORT, MUX_ALLOW, allow_lan=MUX_LAN))
     waiting_logged = False
     while True:
         if not os.path.exists(SERIAL):

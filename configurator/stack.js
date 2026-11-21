@@ -31,6 +31,7 @@
     mobilePass: '',
     appAccess: true,
     appPort: 5000,
+    appLan: true,
     appAllow: '',
     channels: '#bot\n#testing',
     botChannel: '#bot',
@@ -181,6 +182,7 @@
       ['SMS_WX_NODE', c.wxNode],
       ['IDLE_POWEROFF_SEC', pw(c.idlePoweroff)],
       ['SMS_MUX_PORT', c.appAccess ? c.appPort : 0],
+      ['SMS_MUX_LAN', c.appLan ? 1 : 0],
       ['SMS_MUX_ALLOW', allow],
       ['SMS_AP_SSID', c.apSsid],
       ['SMS_AP_PASS', c.apPass],
@@ -246,7 +248,7 @@
     if (c.link === 'uart') g.push('## 5. Radio firmware\n\nFlash the patched T114 build from `provision/firmware/t114/` (see its README), or rebuild with `build.sh`. The UART link only exists in that build.\n');
     g.push(`## ${c.link === 'uart' ? 6 : 5}. Channels\n\nAfter the reboot:\n\n\`\`\`bash\nsudo /opt/mesh-stack/add-channels.sh\n\`\`\`\n\nAdds ${chans.length ? chans.join(', ') : 'nothing (none chosen)'} into the first free slots. ${c.botChannel ? `The bot answers \`${c.cmdPrefix} wx\` on ${c.botChannel}.` : 'The bot answers direct messages only.'} Add the same names in the phone app to see the same traffic.\n`);
     const reach = [`- Web UI: \`http://${c.hostname}.local/\`, or \`http://10.42.0.1/\` when joined to the AP \`${c.apSsid}\``];
-    if (c.appAccess) reach.push(`- MeshCore app: Network/TCP, this node's address, port ${c.appPort}. Allowed: loopback, Tailscale (100.64.0.0/10)${c.appAllow ? ', ' + lines(c.appAllow.replace(/,/g, '\n')).join(', ') : ''}`);
+    if (c.appAccess) reach.push(`- MeshCore app: Network/TCP, this node's address, port ${c.appPort}. Allowed: loopback, Tailscale (100.64.0.0/10)${c.appLan ? ', devices on the same local network' : ''}${c.appAllow ? ', ' + lines(c.appAllow.replace(/,/g, '\n')).join(', ') : ''}`);
     g.push(`## Reaching it\n\n${reach.join('\n')}\n`);
     if (c.bbox) g.push('## Offline maps\n\nRun `bash tiles.sh` on a machine with a good connection after setting `PM_BUILD`, then copy the `.mbtiles` files to `/opt/mesh-stack/maps/`.\n');
     return g.join('\n');

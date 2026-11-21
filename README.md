@@ -76,7 +76,7 @@ See [`docs/hardware-notes.md`](docs/hardware-notes.md) for build notes and [`doc
 
 ## Security
 
-- The web UI (port 80) and the app port have no authentication. The web UI can send messages, log in to repeaters and flash firmware. Run the node only on networks you trust and keep the allowed-networks list narrow.
+- The web UI (port 80) and the app port have no authentication. The web UI can send messages, log in to repeaters and flash firmware. By default the app port accepts loopback, Tailscale and devices on the node's own private networks, so anyone on the same Wi-Fi can use the radio. Run the node only on networks you trust; the configurator can turn the own-network option off.
 - The access point passphrase is required (8&ndash;63 characters). If you leave it blank, setup generates one.
 - `stack.env` contains passphrases. It is gitignored and should never be committed or shared.
 - The bundled `.uf2` files are built from the patches in this repository against upstream MeshCore. To avoid trusting a binary, rebuild them with [`build.sh`](provision/firmware/t114/build.sh).

@@ -120,8 +120,8 @@ boot partition, then run `provision/setup.sh` over SSH.
 
 `meshbot` runs a radio multiplexer ([`mux.py`](../provision/app/mux.py)) that owns the T114's
 serial port, so the official MeshCore app can connect (Network/TCP, port **5000**) while the bot,
-telemetry and wardrive log keep running. Peers must be on the tailnet (`100.64.0.0/10`) or
-loopback; add more with `SMS_MUX_ALLOW=192.168.50.0/24`. `SMS_MUX=0` restores direct serial, and
+telemetry and wardrive log keep running. Peers must be on the tailnet (`100.64.0.0/10`), loopback, or a private
+network the node itself is attached to (`SMS_MUX_LAN=0` turns that off); add more with `SMS_MUX_ALLOW=192.168.50.0/24`. `SMS_MUX=0` restores direct serial, and
 `SMS_MUX_PORT=0` keeps the multiplexer but closes the app port. Commands are serialized, so a
 big contacts download from the app delays the bot's commands for a few seconds. Tests:
 `python -m unittest provision/tests/test_mux.py`.

@@ -66,6 +66,11 @@ test('header title', () => {
   assert.equal(env(Stack.generate(base({ title: '  Field Node 7 ' }))).SMS_TITLE, 'Field Node 7');
 });
 
+test('app access admits the local network by default, and can be restricted', () => {
+  assert.equal(env(Stack.generate(base())).SMS_MUX_LAN, '1');
+  assert.equal(env(Stack.generate(base({ appLan: false }))).SMS_MUX_LAN, '0');
+});
+
 test('closing app access sets port 0; no bot channel means DM-only', () => {
   const e = env(Stack.generate(base({ appAccess: false, botChannel: '' })));
   assert.equal(e.SMS_MUX_PORT, '0');

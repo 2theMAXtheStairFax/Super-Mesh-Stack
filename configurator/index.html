@@ -64,6 +64,7 @@
       <label class="check"><input type="checkbox" name="appAccess"> Let the MeshCore phone app connect over the network</label>
       <div class="sub" data-show="appAccess">
         <label>TCP port <input name="appPort" type="number" min="1024" max="65535"></label>
+        <label class="check"><input type="checkbox" name="appLan"> Allow devices on the node's own network <small>(home Wi-Fi, mobile router, its access point)</small></label>
         <label>Extra allowed networks <input name="appAllow" placeholder="192.168.1.0/24, 10.0.0.0/8"><small>Loopback and Tailscale are always allowed. There is no authentication, so keep this narrow.</small></label>
       </div>
     </fieldset>

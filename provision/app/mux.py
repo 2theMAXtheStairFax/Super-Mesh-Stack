@@ -2,8 +2,8 @@
 """
 Radio multiplexer for the T114 companion link.
 
-Owns the serial port so meshbot (loopback) and the MeshCore app (TCP, tailnet
-only) can share the radio. The companion protocol is one command -> one reply
+Owns the serial port so meshbot (loopback) and the MeshCore app (TCP; tailnet,
+the node's own private networks and any configured CIDRs) can share the radio. The companion protocol is one command -> one reply
 (GET_CONTACTS streams several), so commands are serialized and each reply goes
 back to whoever asked. Push frames (>= 0x80) go to everyone. The radio's
 offline message queue pops on read, so messages are fanned out to every client
@@ -30,6 +30,7 @@ QUEUE_LIMIT = 64
 MSG_BACKLOG = 200
 ready = asyncio.Event()   # set while the radio is open and the local port is listening
 ALLOWED = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
+HOME_RANGES = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
 
 
 def log(msg):
@@ -67,12 +68,35 @@ class FrameParser:
         return out
 
 
-def peer_allowed(host, extra=()):
+def lan_networks(ifaddrs=None):
+    """Private networks this host is directly attached to (home LAN, hotspot, own AP).
+
+    Anything wider than /16 (/48 for IPv6) is skipped, so an odd netmask can't open the port up."""
+    if ifaddrs is None:
+        import psutil
+        ifaddrs = psutil.net_if_addrs()
+    nets = []
+    for addrs in ifaddrs.values():
+        for a in addrs:
+            try:
+                ip = ipaddress.ip_address(a.address.split("%")[0])
+                mask = ipaddress.ip_address(a.netmask)
+            except (ValueError, AttributeError):
+                continue
+            if ip.version != mask.version or not any(ip in n for n in HOME_RANGES):
+                continue
+            bits = bin(int(mask)).count("1")
+            if bits >= (16 if ip.version == 4 else 48):
+                nets.append(ipaddress.ip_network(f"{ip}/{bits}", strict=False))
+    return nets
+
+
+def peer_allowed(host, extra=(), lan=()):
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return False
-    return ip.is_loopback or any(ip in n for n in ALLOWED + tuple(extra))
+    return ip.is_loopback or any(ip in n for n in ALLOWED + tuple(extra) + tuple(lan))
 
 
 class Client:
@@ -239,7 +263,7 @@ async def open_serial(path, baud):
     return r, w
 
 
-async def supervise(path, baud, local_port, remote_port, extra_allow=(), retry=5.0):
+async def supervise(path, baud, local_port, remote_port, extra_allow=(), retry=5.0, allow_lan=False):
     """Run forever: open the radio, serve clients, reopen when the link drops."""
     extra = tuple(ipaddress.ip_network(n) for n in extra_allow)
     while True:
@@ -253,7 +277,7 @@ async def supervise(path, baud, local_port, remote_port, extra_allow=(), retry=5
 
             async def remote(rd, wr):
                 peer = wr.get_extra_info("peername")
-                if not peer or not peer_allowed(peer[0], extra):
+                if not peer or not peer_allowed(peer[0], extra, lan_networks() if allow_lan else ()):
                     log(f"refused {peer}")
                     wr.close()
                     return
