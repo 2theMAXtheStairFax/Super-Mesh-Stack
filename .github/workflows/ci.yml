@@ -20,6 +20,9 @@ jobs:
       - run: python -m py_compile provision/app/*.py provision/maps/fetch_tiles.py
       - run: pip install bottle meshcore
       - run: python -m unittest discover -s provision/tests
+      - run: |
+          pip install pyflakes
+          if python -m pyflakes provision tools | grep 'undefined name'; then exit 1; fi
       - run: for f in provision/setup.sh provision/net/netmode.sh provision/app/*.sh provision/firmware/t114/build.sh; do bash -n "$f"; done
       - run: sudo apt-get install -y shellcheck && shellcheck -S warning provision/setup.sh provision/net/netmode.sh provision/app/add-channels.sh
       - run: python tools/scan_private.py

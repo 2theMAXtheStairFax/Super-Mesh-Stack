@@ -5,6 +5,12 @@ VERSION = "0.1.0"
 LICENSE = "MIT"
 REPO = "https://github.com/2theMAXtheStairFax/Super-Mesh-Stack"
 
+
+def short_name(name):
+    """First project of a combined credit, for the narrow screen list."""
+    return name.split(" / ")[0].split(",")[0].strip()
+
+
 # (name, what it provides, license, url)
 CREDITS = [
     ("MeshCore", "Mesh protocol and companion radio firmware", "MIT", "https://github.com/meshcore-dev/MeshCore"),

@@ -23,6 +23,14 @@ class AboutTest(unittest.TestCase):
             self.assertTrue(name and role, name)
             self.assertTrue(url.startswith("https://"), name)
 
+    def test_screen_labels_fit_and_are_not_cut_mid_word(self):
+        for name, *_ in about.CREDITS:
+            label = about.short_name(name)
+            self.assertLessEqual(len(label), 20, name)
+            self.assertTrue(name.startswith(label), name)
+        self.assertEqual(about.short_name("meshcore-cli / meshcore_py"), "meshcore-cli")
+        self.assertEqual(about.short_name("Oswald, Bungee Hairline"), "Oswald")
+
     def test_external_links_do_not_leak_the_opener(self):
         html = call("/about")[2]
         self.assertEqual(html.count("target=_blank"), html.count("noopener noreferrer"))

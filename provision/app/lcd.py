@@ -6,7 +6,7 @@ Dashboard by default. With the Qwiic Navigation Switch connected:
 Menu: Messages, Fox aerial, Send advert, Radio control, Wi-Fi, Settings, Restart, Shut down.
 Runs without the joystick too (retries every SW_RETRY seconds).
 """
-import json, signal, socket, sqlite3, subprocess, sys, threading, time
+import json, os, signal, socket, sqlite3, subprocess, sys, threading, time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import psutil
@@ -679,7 +679,7 @@ class UI:
                 ("Credits", lambda: self.push("CREDITS", self.credits_items))]
 
     def credits_items(self):
-        return [(name[:20], lambda n=name, r=role, li=lic: self.show_flash(n, r, li) if li else self.show_flash(n, r))
+        return [(about.short_name(name), lambda n=name, r=role, li=lic: self.show_flash(n, r, li) if li else self.show_flash(n, r))
                 for name, role, lic, _ in about.CREDITS]
 
     def settings_items(self):
