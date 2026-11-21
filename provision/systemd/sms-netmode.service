@@ -1,0 +1,15 @@
+[Unit]
+Description=Mesh Stack - Wi-Fi mode (saved AP on/off + home/mobile client)
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=SMS_HOME_CON=preconfigured
+Environment=SMS_MOBILE_CON=sms-mobile
+EnvironmentFile=-/etc/mesh-stack/stack.env
+ExecStart=/opt/mesh-stack/net/netmode.sh boot
+
+[Install]
+WantedBy=multi-user.target

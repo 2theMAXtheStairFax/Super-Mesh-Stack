@@ -1,0 +1,15 @@
+[Unit]
+Description=Mesh Stack - TFT dashboard + joystick menu
+After=multi-user.target sms-meshbot.service
+
+[Service]
+Type=simple
+User=mesh
+WorkingDirectory=/opt/mesh-stack
+EnvironmentFile=-/etc/mesh-stack/stack.env
+ExecStart=/opt/mesh-stack/venv/bin/python /opt/mesh-stack/lcd.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

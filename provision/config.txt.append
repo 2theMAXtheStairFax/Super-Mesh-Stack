@@ -1,0 +1,40 @@
+
+# ===== Mesh Stack - minimal headless Pi 3B ==========================
+# Append to /boot/firmware/config.txt (partition "bootfs" / drive J:)
+# after flashing with Raspberry Pi Imager, before first boot.
+
+# I2C: joystick (0x20), Argon Fan HAT MCU (0x1a), UPS HAT (0x43 / 0x2d)
+dtparam=i2c_arm=on
+dtparam=i2c_arm_baudrate=400000
+
+# SPI0 for the 0.96" ST7735 TFT, one chip-select only so GPIO7 (pin 26) is free for its backlight
+dtoverlay=spi0-1cs
+
+# Nothing on this box has a screen, speaker, or camera
+dtparam=audio=off
+camera_auto_detect=0
+display_auto_detect=0
+disable_splash=1
+gpu_mem=16
+
+# T114 talks over USB serial, not BLE - drop the Bluetooth stack, free UART0
+dtoverlay=disable-bt
+# ...and UART0 (PL011, GPIO14/15 = pins 8/10, /dev/serial0) is the wired link
+# to the T114's P1 header (sms-gps-uart build). setup.sh removes the login
+# console from it.
+enable_uart=1
+
+# --- Automated wake ----------------------------------------------------------
+# The T114 pulls GPIO3 (pin 5) LOW to boot the Pi from a halted state. That is
+# a SoC hardware feature - no overlay or daemon is needed for WAKE.
+#
+# gpio-shutdown below would give the same pin a clean-shutdown path while the
+# Pi is running, but it collides with argononed's POWER-button handler. Leave
+# it commented if you run Argon's installer (the default in setup.sh). Enable
+# it only if you skip argononed and drive fan control yourself.
+#dtoverlay=gpio-shutdown,gpio_pin=3,active_low=1,gpio_pull=up
+
+# Optional: stop the green ACT LED blinking all night (saves a trickle, and
+# it is invisible inside the enclosure anyway)
+#dtparam=act_led_trigger=none
+#dtparam=act_led_activelow=off

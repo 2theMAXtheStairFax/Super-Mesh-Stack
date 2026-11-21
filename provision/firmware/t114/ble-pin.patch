@@ -1,0 +1,49 @@
+diff --git a/examples/companion_radio/AbstractUITask.h b/examples/companion_radio/AbstractUITask.h
+index d927c1a..7325dbf 100644
+--- a/examples/companion_radio/AbstractUITask.h
++++ b/examples/companion_radio/AbstractUITask.h
+@@ -35,6 +35,7 @@ public:
+   bool hasConnection() const { return _interfaceManager->isConnected(); }
+   uint16_t getBattMilliVolts() const { return _board->getBattMilliVolts(); }
+   bool isBluetoothEnabled() const { return _interfaceManager->isBluetoothEnabled(); }
++  bool hasBluetoothConnection() const { return _interfaceManager->isBluetoothConnected(); }
+   void enableBluetooth() { _interfaceManager->enableBluetooth(); }
+   void disableBluetooth() { _interfaceManager->disableBluetooth(); }
+ 
+diff --git a/examples/companion_radio/ui-new/UITask.cpp b/examples/companion_radio/ui-new/UITask.cpp
+index 3a94087..b6b86ed 100644
+--- a/examples/companion_radio/ui-new/UITask.cpp
++++ b/examples/companion_radio/ui-new/UITask.cpp
+@@ -347,7 +347,11 @@ public:
+         display.setTextSize(1);
+         display.drawTextCentered(display.width() / 2, 32, tmp);
+       #endif
+-      if (_task->hasConnection()) {
++      // SFM: the Pi is always connected over USB/UART, which hid the BLE pin for good.
++      // Show it whenever BLE is up but no phone has paired yet.
++      bool ble_waiting = the_mesh.getBLEPin() != 0 && !_task->hasBluetoothConnection()
++                         && (_task->isBluetoothEnabled() || !_task->hasConnection());
++      if (_task->hasConnection() && !ble_waiting) {
+         display.setColor(UIColor::warning_txt);
+         display.setTextSize(1);
+         #ifdef UI_SHOW_CLOCK
+diff --git a/src/helpers/MultiSerialInterface.h b/src/helpers/MultiSerialInterface.h
+index f7742b2..84a0925 100644
+--- a/src/helpers/MultiSerialInterface.h
++++ b/src/helpers/MultiSerialInterface.h
+@@ -81,6 +81,15 @@ public:
+     }
+   }
+ 
++  bool isBluetoothConnected() const {   // SFM: BLE alone, not "any interface"
++    for(auto iface : _interfaces){
++      if(iface.instance && iface.type == InterfaceType::Bluetooth){
++        return iface.instance->isConnected();
++      }
++    }
++    return false;
++  }
++
+   bool isBluetoothEnabled() {
+     for(auto iface : _interfaces){
+       if(iface.instance && iface.type == InterfaceType::Bluetooth){

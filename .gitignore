@@ -1,0 +1,53 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Build output
+/build/
+/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# deployment-specific notes (personal hostnames, SSIDs, IPs, etc.)
+*.local.md
+CONTEXT.local.md
+
+# --- secrets / local state: never commit ---
+# credentials, keys, tokens, env files
+*.env
+.env*
+secrets.*
+*secret*
+*.key
+*.pem
+id_ed25519*
+id_rsa*
+*.p12
+wpa_supplicant.conf
+*.nmconnection
+
+# runtime data pulled off the mesh / node
+*.sqlite
+*.sqlite3
+*.db
+telemetry.*
+*.log
+
+# firmware blobs / flash artifacts
+*.uf2
+*.hex
+*.bin
+.pio/
+
+# ...except the bundled patched T114 builds the Pi flashes from
+!provision/firmware/t114/*.uf2
+provision/firmware/t114/.src/
+
+# configurator output: holds passphrases
+provision/stack.env
+super-mesh-stack-bundle*

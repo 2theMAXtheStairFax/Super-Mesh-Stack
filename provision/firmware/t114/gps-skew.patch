@@ -1,0 +1,97 @@
+diff --git a/src/helpers/sensors/EnvironmentSensorManager.cpp b/src/helpers/sensors/EnvironmentSensorManager.cpp
+index 0dc892c..6782bda 100644
+--- a/src/helpers/sensors/EnvironmentSensorManager.cpp
++++ b/src/helpers/sensors/EnvironmentSensorManager.cpp
+@@ -923,6 +923,28 @@ void EnvironmentSensorManager::stop_gps() {
+ }
+ #endif // ENV_INCLUDE_GPS
+ 
++#ifdef GPS_SKEW
++// SFM: "gps skew on|off" (T114Board) - shift the shared GPS position 200 m on a
++// bearing picked fresh each time skew turns on. A fixed offset, not per-fix
++// jitter, so averaging many adverts doesn't walk back to the real spot.
++extern volatile bool g_gps_skew;
++#define GPS_SKEW_M 200.0
++
++static void applyGpsSkew(double& lat, double& lon) {
++  static bool was_on = false;
++  static double bearing = 0;
++  if (!g_gps_skew) { was_on = false; return; }
++  if (!was_on) {    // timing of the first skewed fix + the fix itself: no RNG state to share
++    uint32_t h = micros() ^ ((uint32_t)(lat * 1e7) * 2654435761UL) ^ (uint32_t)(lon * 1e7);
++    h ^= h >> 16; h *= 0x7feb352dUL; h ^= h >> 15;
++    bearing = (h % 3600) * (PI / 1800.0);
++    was_on = true;
++  }
++  lon += (GPS_SKEW_M * sin(bearing)) / (111320.0 * cos(lat * PI / 180.0));
++  lat += (GPS_SKEW_M * cos(bearing)) / 111320.0;
++}
++#endif
++
+ #if ENV_INCLUDE_GPS || defined(ENV_INCLUDE_BME680_BSEC)
+ void EnvironmentSensorManager::loop() {
+ 
+@@ -946,6 +968,9 @@ void EnvironmentSensorManager::loop() {
+     if (_location->isValid()) {
+       node_lat = ((double)_location->getLatitude())/1000000.;
+       node_lon = ((double)_location->getLongitude())/1000000.;
++      #ifdef GPS_SKEW
++      applyGpsSkew(node_lat, node_lon);
++      #endif
+       MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
+       node_altitude = ((double)_location->getAltitude()) / 1000.0;
+       MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
+diff --git a/variants/heltec_t114/T114Board.cpp b/variants/heltec_t114/T114Board.cpp
+index 3135c58..9bb8528 100644
+--- a/variants/heltec_t114/T114Board.cpp
++++ b/variants/heltec_t114/T114Board.cpp
+@@ -10,6 +10,9 @@ volatile uint32_t g_force_time = 0;
+ volatile bool g_ui_flip = false;
+ // SFM: "ui bright <5-100>" - screen backlight level
+ volatile uint8_t g_ui_bright = 100;
++// SFM: "gps skew on|off" - offset the GPS position 200 m before it's shared.
++// On at boot so nothing goes out unskewed before the Pi re-sends its setting.
++volatile bool g_gps_skew = true;
+ 
+ #include <Arduino.h>
+ #include <Wire.h>
+diff --git a/variants/heltec_t114/T114Board.h b/variants/heltec_t114/T114Board.h
+index cd3639c..fe0076f 100644
+--- a/variants/heltec_t114/T114Board.h
++++ b/variants/heltec_t114/T114Board.h
+@@ -9,6 +9,7 @@ extern volatile bool g_ui_msg_wake;
+ extern volatile uint32_t g_force_time;
+ extern volatile bool g_ui_flip;
+ extern volatile uint8_t g_ui_bright;
++extern volatile bool g_gps_skew;
+ 
+ // built-ins
+ #define  PIN_VBAT_READ    4
+@@ -73,6 +74,15 @@ public:
+       strcpy(reply, "OK");
+       return true;
+     }
++    if (strcmp(command, "gps skew on") == 0 || strcmp(command, "gps skew off") == 0) {
++      g_gps_skew = command[10] == 'n';
++      strcpy(reply, "OK");
++      return true;
++    }
++    if (strcmp(command, "gps skew") == 0) {
++      strcpy(reply, g_gps_skew ? "> on" : "> off");
++      return true;
++    }
+     if (strcmp(command, "ui msgwake on") == 0 || strcmp(command, "ui msgwake off") == 0) {
+       g_ui_msg_wake = command[13] == 'n';
+       strcpy(reply, "OK");
+diff --git a/variants/heltec_t114/platformio.ini b/variants/heltec_t114/platformio.ini
+index 6e3e9d1..0b046b5 100644
+--- a/variants/heltec_t114/platformio.ini
++++ b/variants/heltec_t114/platformio.ini
+@@ -239,6 +239,7 @@ build_flags =
+   -D SERIAL_RX=PIN_SERIAL2_RX   ; SFM: companion protocol to the Pi over UART too
+   -D SERIAL_TX=PIN_SERIAL2_TX
+   -D UI_KEY_INJECT   ; SFM: "ui ..." CLI command drives the screen
++  -D GPS_SKEW   ; SFM: "gps skew on|off" - shared position offset 200 m
+   -D DISPLAY_PORTRAIT=1        ; SFM: screen used vertically (64x128 layout)
+   -D UI_RECENT_LIST_SIZE=8     ; SFM: taller screen fits 8 recent adverts
+   -D UI_MSG_PREVIEW_SIZE=140   ; SFM: and longer message previews

@@ -1,0 +1,148 @@
+diff --git a/src/helpers/sensors/MicroNMEALocationProvider.h b/src/helpers/sensors/MicroNMEALocationProvider.h
+index 37ef576..f6482b4 100644
+--- a/src/helpers/sensors/MicroNMEALocationProvider.h
++++ b/src/helpers/sensors/MicroNMEALocationProvider.h
+@@ -61,6 +61,57 @@ class MicroNMEALocationProvider : public LocationProvider {
+         MicroNMEA::sendSentence(*_gps_serial, "$PCAS04,7");
+         delay(250);
+     }
++#endif
++#ifdef GPS_UBLOX_M10
++    // u-blox M10 constellation select is UBX-CFG-VALSET (binary protocol),
++    // not a text sentence like MediaTek's PCAS04 - no NMEA equivalent, so
++    // this bypasses nmea.sendSentence() and writes the frame directly.
++    // Reapplied on every reset() since the module may not persist config
++    // across a power cycle depending on backup supercap/battery state.
++    void configureUbloxM10() {
++        static const uint32_t keys[] = {
++            0x1031001fUL, // CFG-SIGNAL_GPS_ENA
++            0x10310001UL, // CFG-SIGNAL_GPS_L1CA_ENA
++            0x10310021UL, // CFG-SIGNAL_GAL_ENA
++            0x10310007UL, // CFG-SIGNAL_GAL_E1_ENA
++            0x10310022UL, // CFG-SIGNAL_BDS_ENA
++            0x1031000dUL, // CFG-SIGNAL_BDS_B1_ENA
++            0x10310025UL, // CFG-SIGNAL_GLO_ENA
++            0x10310018UL, // CFG-SIGNAL_GLO_L1_ENA
++            0x10310024UL, // CFG-SIGNAL_QZSS_ENA
++            0x10310012UL, // CFG-SIGNAL_QZSS_L1CA_ENA
++        };
++        const int n = sizeof(keys) / sizeof(keys[0]);
++
++        uint8_t payload[4 + 5 * n];
++        payload[0] = 0x00;   // message version
++        payload[1] = 0x07;   // layers: RAM | BBR | Flash
++        payload[2] = 0x00;   // reserved
++        payload[3] = 0x00;   // reserved
++        int p = 4;
++        for (int i = 0; i < n; i++) {
++            payload[p++] = (uint8_t)(keys[i] >> 0);
++            payload[p++] = (uint8_t)(keys[i] >> 8);
++            payload[p++] = (uint8_t)(keys[i] >> 16);
++            payload[p++] = (uint8_t)(keys[i] >> 24);
++            payload[p++] = 0x01;   // enable
++        }
++
++        static const uint8_t sync[2] = { 0xB5, 0x62 };
++        uint8_t head[4] = { 0x06, 0x8A, (uint8_t)(p & 0xFF), (uint8_t)((p >> 8) & 0xFF) };
++
++        uint8_t ck_a = 0, ck_b = 0;
++        for (int i = 0; i < 4; i++) { ck_a = (uint8_t)(ck_a + head[i]); ck_b = (uint8_t)(ck_b + ck_a); }
++        for (int i = 0; i < p; i++) { ck_a = (uint8_t)(ck_a + payload[i]); ck_b = (uint8_t)(ck_b + ck_a); }
++
++        delay(250);
++        _gps_serial->write(sync, 2);
++        _gps_serial->write(head, 4);
++        _gps_serial->write(payload, p);
++        _gps_serial->write(ck_a);
++        _gps_serial->write(ck_b);
++        delay(250);
++    }
+ #endif
+     // Observation-only diagnostics. These fields do not change GPS power,
+     // timing, reset behaviour, or parser input.
+@@ -133,6 +184,9 @@ public :
+         // EnvironmentSensorManager calls reset() immediately after begin().
+         // Configure only after that reset so the setting is not discarded.
+         configureL76K();
++#endif
++#ifdef GPS_UBLOX_M10
++        configureUbloxM10();
+ #endif
+     }
+ 
+diff --git a/variants/heltec_t114/platformio.ini b/variants/heltec_t114/platformio.ini
+index e795bc7..c265dbf 100644
+--- a/variants/heltec_t114/platformio.ini
++++ b/variants/heltec_t114/platformio.ini
+@@ -28,11 +28,6 @@ build_flags = ${nrf52_base.build_flags}
+   -D SX126X_DIO3_TCXO_VOLTAGE=1.8
+   -D SX126X_CURRENT_LIMIT=140
+   -D SX126X_RX_BOOSTED_GAIN=1
+-  -D PIN_GPS_RX=39
+-  -D PIN_GPS_TX=37
+-  -D PIN_GPS_EN=21
+-  -D PIN_GPS_RESET=38
+-  -D PIN_GPS_RESET_ACTIVE=LOW
+   -D ENV_PIN_SDA=PIN_WIRE1_SDA
+   -D ENV_PIN_SCL=PIN_WIRE1_SCL
+ build_src_filter = ${nrf52_base.build_src_filter}
+@@ -229,6 +224,30 @@ lib_deps =
+   ${Heltec_t114_with_display.lib_deps}
+   densaugeo/base64 @ ~1.4.0
+ 
++[env:Heltec_t114_companion_radio_ble_usb]
++extends = Heltec_t114_with_display
++board_build.ldscript = boards/nrf52840_s140_v6_extrafs.ld
++board_upload.maximum_size = 712704
++build_flags =
++  ${Heltec_t114_with_display.build_flags}
++  -I examples/companion_radio/ui-new
++  -D MAX_CONTACTS=350
++  -D MAX_GROUP_CHANNELS=40
++  -D BLE_PIN_CODE=123456
++  -D ENABLE_USB_INTERFACE
++  -D ENV_INCLUDE_GPS=1   ; enable the GPS page in UI
++;  -D BLE_DEBUG_LOGGING=1
++  -D OFFLINE_QUEUE_SIZE=256
++;  -D MESH_PACKET_LOGGING=1
++;  -D MESH_DEBUG=1
++build_src_filter = ${Heltec_t114_with_display.build_src_filter}
++  +<helpers/nrf52/SerialBLEInterface.cpp>
++  +<../examples/companion_radio/*.cpp>
++  +<../examples/companion_radio/ui-new/*.cpp>
++lib_deps =
++  ${Heltec_t114_with_display.lib_deps}
++  densaugeo/base64 @ ~1.4.0
++
+ [env:Heltec_t114_companion_radio_usb]
+ extends = Heltec_t114_with_display
+ board_build.ldscript = boards/nrf52840_s140_v6_extrafs.ld
+diff --git a/variants/heltec_t114/variant.h b/variants/heltec_t114/variant.h
+index bfb4484..6e12447 100644
+--- a/variants/heltec_t114/variant.h
++++ b/variants/heltec_t114/variant.h
+@@ -125,11 +125,19 @@
+ 
+ ////////////////////////////////////////////////////////////////////////////////
+ // GPS
+-
+-#define GPS_EN                  (21)
+-#define GPS_RESET               (38)
+-#define PIN_GPS_RX              (39)  // This is for bits going TOWARDS the GPS
+-#define PIN_GPS_TX              (37)  // This is for bits going TOWARDS the CPU
++//
++// Rev2 also breaks out GPS_EN/RESET/PPS/RX/TX (GPIO21/38/36/39/37) on the
++// JST-GH GNSS connector, but that needs a mating cable this board doesn't
++// have. Wired instead to the P1 header's UART1 pins (GPIO9/10), which are
++// accessible with jumper wires, for a Foxeer M10Q-180 module. That module
++// has no EN or hardware RESET line, so both are left unused (-1).
++
++#define GPS_EN                  (-1)
++#define GPS_RESET               (-1)
++#define PIN_GPS_RX              (10)  // This is for bits going TOWARDS the GPS (P1 header UART1_TX)
++#define PIN_GPS_TX              (9)   // This is for bits going TOWARDS the CPU (P1 header UART1_RX)
++#define GPS_BAUD_RATE            115200  // Foxeer M10Q-180 default NMEA baud
++#define GPS_UBLOX_M10                    // u-blox M10 chipset: force GPS+Galileo+BeiDou+GLONASS+QZSS concurrently via UBX-CFG-VALSET (see MicroNMEALocationProvider.h)
+ 
+ ////////////////////////////////////////////////////////////////////////////////
+ // TFT

@@ -1,0 +1,57 @@
+diff --git a/variants/heltec_t114/T114Board.h b/variants/heltec_t114/T114Board.h
+index bd76d3d..b3b28cf 100644
+--- a/variants/heltec_t114/T114Board.h
++++ b/variants/heltec_t114/T114Board.h
+@@ -28,7 +28,52 @@ public:
+   }
+ #endif
+ 
++  // SFM: host-fed battery. The host (Pi) pushes its own pack voltage with
++  // "set ext.batt <mV> [chg]"; while fresh it replaces the onboard ADC reading
++  // everywhere (display, app, stats, telemetry). Stale -> falls back to the ADC.
++  uint16_t ext_batt_mv = 0;
++  bool ext_batt_chg = false;
++  uint32_t ext_batt_at = 0;
++  static const uint32_t EXT_BATT_TTL_MS = 300000UL;
++
++  bool extBattFresh() const {
++    return ext_batt_mv != 0 && (millis() - ext_batt_at) < EXT_BATT_TTL_MS;
++  }
++
++  bool handleCommand(const char* command, uint32_t sender_timestamp, char* reply) override {
++    if (memcmp(command, "set ext.batt ", 13) == 0) {
++      const char* p = &command[13];
++      long mv = strtol(p, (char**)&p, 10);
++      if (mv < 0 || mv > 6000) {
++        strcpy(reply, "Error, mV out of range");
++        return true;
++      }
++      ext_batt_mv = (uint16_t)mv;
++      ext_batt_chg = strstr(p, "chg") != NULL;
++      ext_batt_at = millis();
++      if (ext_batt_at == 0) ext_batt_at = 1;
++      strcpy(reply, "OK");
++      return true;
++    }
++    if (strcmp(command, "get ext.batt") == 0) {
++      if (extBattFresh()) {
++        sprintf(reply, "> %u mV%s, %lus old", ext_batt_mv, ext_batt_chg ? " chg" : "",
++                (unsigned long)((millis() - ext_batt_at) / 1000));
++      } else {
++        strcpy(reply, "> (none, using onboard ADC)");
++      }
++      return true;
++    }
++    return false;
++  }
++
++  bool isExternalPowered() override {
++    if (extBattFresh()) return ext_batt_chg;
++    return NRF52BoardDCDC::isExternalPowered();
++  }
++
+   uint16_t getBattMilliVolts() override {
++    if (extBattFresh()) return ext_batt_mv;
+     int adcvalue = 0;
+     analogReadResolution(12);
+     analogReference(AR_INTERNAL_3_0);

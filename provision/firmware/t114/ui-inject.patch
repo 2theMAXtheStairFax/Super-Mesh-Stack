@@ -1,0 +1,147 @@
+diff --git a/examples/companion_radio/ui-new/UITask.cpp b/examples/companion_radio/ui-new/UITask.cpp
+index bc25de7..7ed7bc2 100644
+--- a/examples/companion_radio/ui-new/UITask.cpp
++++ b/examples/companion_radio/ui-new/UITask.cpp
+@@ -3,6 +3,12 @@
+ #include "../MyMesh.h"
+ #include "target.h"
+ #include <time.h>
++
++#ifdef UI_KEY_INJECT
++extern volatile char g_ui_inject_key;   // SFM: set by the "ui ..." CLI command
++extern volatile bool g_ui_msg_wake;     // SFM: "ui msgwake on|off"
++extern volatile uint32_t g_force_time;  // SFM: "time force <epoch>"
++#endif
+ #ifdef ENABLE_WIFI_INTERFACE
+   #include <WiFi.h>
+ #endif
+@@ -802,7 +808,11 @@ void UITask::onMessageRecv(mesh::Packet *pkt, const ContactInfo &from, uint8_t t
+   setCurrScreen(msg_preview);
+ 
+   if (_display != NULL) {
+-    if (!_display->isOn() && !hasConnection()) {
++    if (!_display->isOn() && !hasConnection()
++#ifdef UI_KEY_INJECT
++        && g_ui_msg_wake   // SFM: "ui msgwake off" keeps the screen dark
++#endif
++    ) {
+       _display->turnOn();
+     }
+     if (_display->isOn()) {
+@@ -822,7 +832,11 @@ void UITask::onChannelMessageRecv(mesh::Packet *pkt, ChannelDetails& channel_det
+   setCurrScreen(msg_preview);
+ 
+   if (_display != NULL) {
+-    if (!_display->isOn() && !hasConnection()) {
++    if (!_display->isOn() && !hasConnection()
++#ifdef UI_KEY_INJECT
++        && g_ui_msg_wake   // SFM: "ui msgwake off" keeps the screen dark
++#endif
++    ) {
+       _display->turnOn();
+     }
+     if (_display->isOn()) {
+@@ -1006,6 +1020,23 @@ void UITask::loop() {
+   }
+ #endif
+ 
++#ifdef UI_KEY_INJECT
++  if (g_force_time) {               // SFM: clock correction from the Pi
++    rtc_clock.setCurrentTime(g_force_time);
++    g_force_time = 0;
++  }
++  if (c == 0 && g_ui_inject_key) {   // SFM: key from the Pi's joystick
++    char k = g_ui_inject_key;
++    g_ui_inject_key = 0;
++    if (k == 'w') {
++      checkDisplayOn(KEY_NEXT);        // wake only
++      _auto_off = millis() + AUTO_OFF_MILLIS;
++    } else {
++      c = checkDisplayOn(k == 'n' ? KEY_NEXT : k == 'p' ? KEY_PREV : k == 'e' ? KEY_ENTER : KEY_SELECT);
++    }
++  }
++#endif
++
+   if (c != 0 && curr) {
+     curr->handleInput(c);
+     _auto_off = millis() + AUTO_OFF_MILLIS;   // extend auto-off timer
+diff --git a/variants/heltec_t114/T114Board.cpp b/variants/heltec_t114/T114Board.cpp
+index 51db72f..cd1daf4 100644
+--- a/variants/heltec_t114/T114Board.cpp
++++ b/variants/heltec_t114/T114Board.cpp
+@@ -1,5 +1,12 @@
+ #include "T114Board.h"
+ 
++// SFM: key queued by the "ui ..." command, consumed by UITask::loop()
++volatile char g_ui_inject_key = 0;
++// SFM: "ui msgwake on|off" - whether an incoming message switches the screen on
++volatile bool g_ui_msg_wake = true;
++// SFM: "time force <epoch>" - lets the Pi set the clock backwards (stock CLI refuses)
++volatile uint32_t g_force_time = 0;
++
+ #include <Arduino.h>
+ #include <Wire.h>
+ 
+diff --git a/variants/heltec_t114/T114Board.h b/variants/heltec_t114/T114Board.h
+index b3b28cf..03438e6 100644
+--- a/variants/heltec_t114/T114Board.h
++++ b/variants/heltec_t114/T114Board.h
+@@ -4,6 +4,10 @@
+ #include <Arduino.h>
+ #include <helpers/NRF52Board.h>
+ 
++extern volatile char g_ui_inject_key;   // SFM: see T114Board.cpp
++extern volatile bool g_ui_msg_wake;
++extern volatile uint32_t g_force_time;
++
+ // built-ins
+ #define  PIN_VBAT_READ    4
+ #define  PIN_BAT_CTL      6
+@@ -41,6 +45,35 @@ public:
+   }
+ 
+   bool handleCommand(const char* command, uint32_t sender_timestamp, char* reply) override {
++    // SFM: "ui next|prev|enter|select|wake" - the Pi's joystick drives this screen
++    if (memcmp(command, "time force ", 11) == 0) {
++      unsigned long t = strtoul(&command[11], NULL, 10);
++      if (t < 1700000000UL) {
++        strcpy(reply, "Error, bad epoch");
++        return true;
++      }
++      g_force_time = (uint32_t)t;
++      strcpy(reply, "OK");
++      return true;
++    }
++    if (strcmp(command, "ui msgwake on") == 0 || strcmp(command, "ui msgwake off") == 0) {
++      g_ui_msg_wake = command[13] == 'n';
++      strcpy(reply, "OK");
++      return true;
++    }
++    if (memcmp(command, "ui ", 3) == 0) {
++      const char* k = &command[3];
++      char code = strcmp(k, "next") == 0 ? 'n' : strcmp(k, "prev") == 0 ? 'p' :
++                  strcmp(k, "enter") == 0 ? 'e' : strcmp(k, "select") == 0 ? 's' :
++                  strcmp(k, "wake") == 0 ? 'w' : 0;
++      if (!code) {
++        strcpy(reply, "Error, ui next|prev|enter|select|wake");
++        return true;
++      }
++      g_ui_inject_key = code;
++      strcpy(reply, "OK");
++      return true;
++    }
+     if (memcmp(command, "set ext.batt ", 13) == 0) {
+       const char* p = &command[13];
+       long mv = strtol(p, (char**)&p, 10);
+diff --git a/variants/heltec_t114/platformio.ini b/variants/heltec_t114/platformio.ini
+index 9394310..d0c7c18 100644
+--- a/variants/heltec_t114/platformio.ini
++++ b/variants/heltec_t114/platformio.ini
+@@ -238,6 +238,7 @@ build_flags =
+   -D ENV_INCLUDE_GPS=1   ; enable the GPS page in UI
+   -D SERIAL_RX=PIN_SERIAL2_RX   ; SFM: companion protocol to the Pi over UART too
+   -D SERIAL_TX=PIN_SERIAL2_TX
++  -D UI_KEY_INJECT   ; SFM: "ui ..." CLI command drives the screen
+ ;  -D BLE_DEBUG_LOGGING=1
+   -D OFFLINE_QUEUE_SIZE=256
+ ;  -D MESH_PACKET_LOGGING=1

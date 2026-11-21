@@ -1,0 +1,29 @@
+[Unit]
+Description=Mesh Stack - T114 command bot + telemetry logger
+After=multi-user.target time-sync.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mesh
+WorkingDirectory=/opt/mesh-stack
+Environment=SMS_DIR=/opt/mesh-stack
+# T114 over the P1-header UART (Pi pins 8/10, sms-uart-ui firmware). Over USB
+# instead (e.g. a stock companion build): /dev/ttyACM0. Same protocol, 115200.
+Environment=SMS_SERIAL=/dev/serial0
+Environment=SMS_BAUD=115200
+# weather cache, `readings` schema (docs/notes/weather.md)
+Environment=SMS_WEATHER_DB=/opt/mesh-stack/weather.sqlite
+# these are just defaults - the web Config tab writes config.json which wins:
+#   bot_channel_idx, cmd_prefix, wx_channel_idx, web_send_default_idx, idle_poweroff_sec
+Environment=SMS_BOT_CHANNEL_IDX=1
+Environment=SMS_CMD_PREFIX=wx
+Environment=SMS_WX_CHANNEL_IDX=1
+Environment=IDLE_POWEROFF_SEC=0
+EnvironmentFile=-/etc/mesh-stack/stack.env
+ExecStart=/opt/mesh-stack/venv/bin/python /opt/mesh-stack/meshbot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

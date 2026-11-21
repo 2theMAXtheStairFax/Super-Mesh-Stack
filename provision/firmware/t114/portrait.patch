@@ -1,0 +1,528 @@
+diff --git a/examples/companion_radio/ui-new/UITask.cpp b/examples/companion_radio/ui-new/UITask.cpp
+index 7ed7bc2..a3fbb48 100644
+--- a/examples/companion_radio/ui-new/UITask.cpp
++++ b/examples/companion_radio/ui-new/UITask.cpp
+@@ -8,6 +8,7 @@
+ extern volatile char g_ui_inject_key;   // SFM: set by the "ui ..." CLI command
+ extern volatile bool g_ui_msg_wake;     // SFM: "ui msgwake on|off"
+ extern volatile uint32_t g_force_time;  // SFM: "time force <epoch>"
++extern volatile bool g_ui_flip;         // SFM: "ui flip on|off"
+ #endif
+ #ifdef ENABLE_WIFI_INTERFACE
+   #include <WiFi.h>
+@@ -39,6 +40,25 @@ extern volatile uint32_t g_force_time;  // SFM: "time force <epoch>"
+ 
+ #include "icons.h"
+ 
++#if DISPLAY_PORTRAIT
++  #define UI_PORTRAIT 1   // SFM: tall 64x128 canvas
++#else
++  #define UI_PORTRAIT 0
++#endif
++
++// SFM: "<verb> long press" hint; on a narrow screen it goes over two centred lines
++static void drawPressHint(DisplayDriver& display, int y, const char* verb) {
++  char buf[40];
++  snprintf(buf, sizeof(buf), "%s %s", verb, PRESS_LABEL);
++  if (display.getTextWidth(buf) <= display.width()) {
++    display.drawTextCentered(display.width() / 2, y, buf);
++  } else {
++    if (y + 11 + 9 > display.height()) y = display.height() - 20;   // keep both lines on screen
++    display.drawTextCentered(display.width() / 2, y, verb);
++    display.drawTextCentered(display.width() / 2, y + 11, PRESS_LABEL);
++  }
++}
++
+ class SplashScreen : public UIScreen {
+   UITask* _task;
+   unsigned long dismiss_after;
+@@ -63,12 +83,18 @@ public:
+     // meshcore logo
+     display.setColor(UIColor::corp_blue);
+     int logoWidth = 128;
+-    display.drawXbm((display.width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
++    if (display.width() >= logoWidth) {
++      display.drawXbm((display.width() - logoWidth) / 2, 3, meshcore_logo, logoWidth, 13);
++    } else {   // SFM: narrow screen - text logo
++      display.setTextSize(2);
++      display.drawTextCentered(display.width() / 2, 2, "MeshCore");
++    }
+ 
+     // meshcore website
+     const char* website = "https://meshcore.io";
+     display.setColor(UIColor::primary_txt);
+     display.setTextSize(1);
++    if (display.getTextWidth(website) > display.width()) website = "meshcore.io";   // SFM
+     uint16_t websiteWidth = display.getTextWidth(website);
+     display.setCursor((display.width() - websiteWidth) / 2, 22);
+     display.print(website);
+@@ -129,7 +155,7 @@ class HomeScreen : public UIScreen {
+   bool discovery_disp_names = true; // by default desplay names if available (removes SNR_O)
+ #endif
+ 
+-  void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
++  void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts, int iconY = 0) {
+     // Convert millivolts to percentage
+ #ifndef BATT_MIN_MILLIVOLTS
+   #define BATT_MIN_MILLIVOLTS 3000
+@@ -144,10 +170,9 @@ class HomeScreen : public UIScreen {
+     if (batteryPercentage > 100) batteryPercentage = 100; // Clamp to 100%
+ 
+     // battery icon
+-    int iconWidth = 24;
+-    int iconHeight = 10;
++    int iconWidth = UI_PORTRAIT ? 16 : 24;   // SFM: smaller on the narrow screen
++    int iconHeight = UI_PORTRAIT ? 8 : 10;
+     int iconX = display.width() - iconWidth - 5; // Position the icon near the top-right corner
+-    int iconY = 0;
+     display.setColor(UIColor::title_txt);
+ 
+     // battery outline
+@@ -255,19 +280,24 @@ public:
+   }
+ 
+   int render(DisplayDriver& display) override {
++    const int T = UI_PORTRAIT ? 12 : 0;   // SFM: portrait gives the battery its own row
+     display.setColor(UIColor::title_bkg);
+-    display.fillRect(0, 0, display.width(), 12);
++    display.fillRect(0, 0, display.width(), 12 + T);
+     char tmp[80];
+     // node name
+     display.setTextSize(1);
+     display.setColor(UIColor::title_txt);
+     char filtered_name[sizeof(_node_prefs->node_name)];
+     display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
++#if UI_PORTRAIT
++    display.drawTextEllipsized(0, 2, display.width(), filtered_name);
++#else
+     display.setCursor(0, 2);
+     display.print(filtered_name);
++#endif
+ 
+     // battery voltage
+-    renderBatteryIndicator(display, _task->getBattMilliVolts());
++    renderBatteryIndicator(display, _task->getBattMilliVolts(), T ? T + 1 : 0);
+ 
+     // curr page indicator
+     if (UIColor::title_bkg == UIColor::window_bkg) {
+@@ -275,9 +305,10 @@ public:
+     } else {
+       display.setColor(UIColor::title_bkg);
+     }
+-    int y = 14;
+-    int x = display.width() / 2 - 5 * (HomePage::Count-1);
+-    for (uint8_t i = 0; i < HomePage::Count; i++, x += 10) {
++    int y = 14 + T;
++    const int step = UI_PORTRAIT ? 8 : 10;   // SFM: 8 dots fit across 72
++    int x = display.width() / 2 - (step / 2) * (HomePage::Count-1);
++    for (uint8_t i = 0; i < HomePage::Count; i++, x += step) {
+       if (i == _page) {
+         display.fillRect(x-1, y-1, 4, 4);
+       } else {
+@@ -296,7 +327,7 @@ public:
+       // larger unread message ui for non wifi variants
+       display.setTextSize(2);
+       sprintf(tmp, "MSG: %d", _task->getMsgCount());
+-      display.drawTextCentered(display.width() / 2, 22, tmp);
++      display.drawTextCentered(display.width() / 2, 22 + T, tmp);
+       #endif
+       #ifdef UI_SHOW_CLOCK
+       display.setTextSize(3);
+@@ -321,7 +352,7 @@ public:
+         #ifdef UI_SHOW_CLOCK
+         display.drawTextCentered(display.width() / 2, 110, "< Connected >");
+         #else
+-        display.drawTextCentered(display.width() / 2, 43, "< Connected >");
++        display.drawTextCentered(display.width() / 2, 43 + T, "< Connected >");
+         #endif
+       } else if (the_mesh.getBLEPin() != 0) { // BT pin
+         display.setColor(UIColor::warning_txt);
+@@ -331,13 +362,13 @@ public:
+         display.drawTextCentered(display.width() / 2, 110, tmp);
+         #else
+         display.setTextSize(2);
+-        display.drawTextCentered(display.width() / 2, 43, tmp);
++        display.drawTextCentered(display.width() / 2, 43 + T, tmp);
+         #endif
+       }
+     } else if (_page == HomePage::RECENT) {
+       the_mesh.getRecentlyHeard(recent, UI_RECENT_LIST_SIZE);
+       display.setColor(UIColor::primary_txt);
+-      int y = 20;
++      int y = 20 + T;
+       for (int i = 0; i < UI_RECENT_LIST_SIZE; i++, y += 11) {
+         auto a = &recent[i];
+         if (a->name[0] == 0) continue;  // empty slot
+@@ -362,6 +393,15 @@ public:
+     } else if (_page == HomePage::RADIO) {
+       display.setColor(UIColor::primary_txt);
+       display.setTextSize(1);
++#if UI_PORTRAIT
++      int ry = 20 + T;   // SFM: one value per line
++      sprintf(tmp, "FQ: %06.3f", _node_prefs->freq);   display.setCursor(0, ry); display.print(tmp); ry += 11;
++      sprintf(tmp, "SF: %d", _node_prefs->sf);          display.setCursor(0, ry); display.print(tmp); ry += 11;
++      sprintf(tmp, "BW: %03.2f", _node_prefs->bw);      display.setCursor(0, ry); display.print(tmp); ry += 11;
++      sprintf(tmp, "CR: %d", _node_prefs->cr);          display.setCursor(0, ry); display.print(tmp); ry += 11;
++      sprintf(tmp, "TX: %ddBm", _node_prefs->tx_power_dbm); display.setCursor(0, ry); display.print(tmp); ry += 11;
++      sprintf(tmp, "NF: %d", radio_driver.getNoiseFloor()); display.setCursor(0, ry); display.print(tmp);
++#else
+       // freq / sf
+       display.setCursor(0, 20);
+       sprintf(tmp, "FQ: %06.3f   SF: %d", _node_prefs->freq, _node_prefs->sf);
+@@ -378,24 +418,25 @@ public:
+       display.setCursor(0, 53);
+       sprintf(tmp, "Noise floor: %d", radio_driver.getNoiseFloor());
+       display.print(tmp);
++#endif
+     } else if (_page == HomePage::BLUETOOTH) {
+       display.setColor(UIColor::corp_blue);
+-      display.drawXbm((display.width() - 32) / 2, 18,
++      display.drawXbm((display.width() - 32) / 2, 18 + T,
+           _task->isBluetoothEnabled() ? bluetooth_on : bluetooth_off,
+           32, 32);
+       display.setColor(UIColor::secondary_txt);
+       display.setTextSize(1);
+-      display.drawTextCentered(display.width() / 2, 64 - 11, "toggle: " PRESS_LABEL);
++      drawPressHint(display, 64 - 11 + T, "toggle:");
+     } else if (_page == HomePage::ADVERT) {
+       display.setColor(UIColor::corp_blue);
+-      display.drawXbm((display.width() - 32) / 2, 18, advert_icon, 32, 32);
++      display.drawXbm((display.width() - 32) / 2, 18 + T, advert_icon, 32, 32);
+       display.setColor(UIColor::secondary_txt);
+-      display.drawTextCentered(display.width() / 2, 64 - 11, "advert: " PRESS_LABEL);
++      drawPressHint(display, 64 - 11 + T, "advert:");
+ #if ENV_INCLUDE_GPS == 1
+     } else if (_page == HomePage::GPS) {
+       LocationProvider* nmea = sensors.getLocationProvider();
+       char buf[50];
+-      int y = 18;
++      int y = 18 + T;
+       bool gps_state = _task->getGPSState();
+ #ifdef PIN_GPS_SWITCH
+       bool hw_gps_state = digitalRead(PIN_GPS_SWITCH);
+@@ -424,6 +465,20 @@ public:
+         sprintf(buf, "%d", nmea->satellitesCount());
+         display.drawTextRightAlign(display.width()-1, y, buf);
+         y = y + 12;
++#if UI_PORTRAIT
++        display.setColor(UIColor::secondary_txt);   // SFM: lat / lon on separate lines
++        display.drawTextLeftAlign(0, y, "lat");
++        display.setColor(UIColor::primary_txt);
++        sprintf(buf, "%.4f", nmea->getLatitude()/1000000.);
++        display.drawTextRightAlign(display.width()-1, y, buf);
++        y = y + 12;
++        display.setColor(UIColor::secondary_txt);
++        display.drawTextLeftAlign(0, y, "lon");
++        display.setColor(UIColor::primary_txt);
++        sprintf(buf, "%.4f", nmea->getLongitude()/1000000.);
++        display.drawTextRightAlign(display.width()-1, y, buf);
++        y = y + 12;
++#else
+         display.setColor(UIColor::secondary_txt);
+         display.drawTextLeftAlign(0, y, "pos");
+         display.setColor(UIColor::primary_txt);
+@@ -431,6 +486,7 @@ public:
+           nmea->getLatitude()/1000000., nmea->getLongitude()/1000000.);
+         display.drawTextRightAlign(display.width()-1, y, buf);
+         y = y + 12;
++#endif
+         display.setColor(UIColor::secondary_txt);
+         display.drawTextLeftAlign(0, y, "alt");
+         display.setColor(UIColor::primary_txt);
+@@ -441,7 +497,7 @@ public:
+ #endif
+ #if UI_SENSORS_PAGE == 1
+     } else if (_page == HomePage::SENSORS) {
+-      int y = 18;
++      int y = 18 + T;
+       refresh_sensors();
+       char buf[30];
+       char name[30];
+@@ -517,7 +573,7 @@ public:
+     } else if (_page == HomePage::DISCOVERY) {
+       int count = disc_nodes_count;
+       display.setColor(UIColor::primary_txt);
+-      int y = 20;
++      int y = 20 + T;
+       for (int i = 0; i < count; i++, y += 11) {
+         char name[32];
+         auto a = &discovered[i];
+@@ -543,8 +599,8 @@ public:
+       if (millis() < discovery_req_time + 5000) {
+         return 1000; // more frequent updates just after req
+       } else if (count < DISCOVERED_NODES_TABLE_SIZE -1) { // show only 5 sec after last disc
+-        y = 10 + 11 * DISCOVERED_NODES_TABLE_SIZE;
+-        display.drawTextCentered(display.width() / 2, y, "discover: " PRESS_LABEL);
++        y = 10 + 11 * DISCOVERED_NODES_TABLE_SIZE + T;
++        drawPressHint(display, y, "discover:");
+       }
+ #endif
+ #ifndef UI_NO_HIBERNATE
+@@ -553,11 +609,11 @@ public:
+       display.setTextSize(1);
+       if (_shutdown_init) {
+         display.setColor(UIColor::warning_txt);
+-        display.drawTextCentered(display.width() / 2, 34, "hibernating...");
++        display.drawTextCentered(display.width() / 2, 34 + T, "hibernating...");
+       } else {
+         display.setColor(UIColor::secondary_txt);
+-        display.drawXbm((display.width() - 32) / 2, 18, power_icon, 32, 32);
+-        display.drawTextCentered(display.width() / 2, 64 - 11, "hibernate:" PRESS_LABEL);
++        display.drawXbm((display.width() - 32) / 2, 18 + T, power_icon, 32, 32);
++        drawPressHint(display, 64 - 11 + T, "hibernate:");
+       }
+ #endif
+     }
+@@ -695,7 +751,7 @@ public:
+     display.setColor(UIColor::secondary_txt);
+     char filtered_origin[sizeof(p->origin)];
+     display.translateUTF8ToBlocks(filtered_origin, p->origin, sizeof(filtered_origin));
+-    display.print(filtered_origin);
++    display.drawTextEllipsized(0, 14, display.width(), filtered_origin);   // SFM: was print()
+ 
+     display.setCursor(0, 25);
+     display.setColor(UIColor::primary_txt);
+@@ -1021,6 +1077,14 @@ void UITask::loop() {
+ #endif
+ 
+ #ifdef UI_KEY_INJECT
++#ifdef ST7789
++  static bool flip_applied = false;
++  if (g_ui_flip != flip_applied) {  // SFM: "ui flip on|off" from the Pi
++    flip_applied = g_ui_flip;
++    display.setFlip(flip_applied);
++    _next_refresh = 0;
++  }
++#endif
+   if (g_force_time) {               // SFM: clock correction from the Pi
+     rtc_clock.setCurrentTime(g_force_time);
+     g_force_time = 0;
+@@ -1063,7 +1127,17 @@ void UITask::loop() {
+         _display->fillRect(p, y, _display->width() - p*2, y);
+         _display->setColor(UIColor::popup_txt);  // draw box border
+         _display->drawRect(p, y, _display->width() - p*2, y);
+-        _display->drawTextCentered(_display->width() / 2, y + p*3, _alert);
++        if (_display->getTextWidth(_alert) <= _display->width() - p*4) {
++          _display->drawTextCentered(_display->width() / 2, y + p*3, _alert);
++        } else {   // SFM: narrow screen - split at the middle space
++          char a1[sizeof(_alert)], *a2 = NULL;
++          strncpy(a1, _alert, sizeof(a1)); a1[sizeof(a1) - 1] = 0;
++          int mid = strlen(a1) / 2, best = -1;
++          for (int i = 0; a1[i]; i++) if (a1[i] == ' ' && (best < 0 || abs(i - mid) < abs(best - mid))) best = i;
++          if (best >= 0) { a1[best] = 0; a2 = &a1[best + 1]; }
++          _display->drawTextCentered(_display->width() / 2, y + p*2, a1);
++          if (a2) _display->drawTextCentered(_display->width() / 2, y + p*2 + 11, a2);
++        }
+         _next_refresh = _alert_expiry;   // will need refresh when alert is dismissed
+       } else {
+         _next_refresh = millis() + delay_millis;
+diff --git a/src/helpers/ui/ST7789Display.cpp b/src/helpers/ui/ST7789Display.cpp
+index 7d039a1..906b895 100644
+--- a/src/helpers/ui/ST7789Display.cpp
++++ b/src/helpers/ui/ST7789Display.cpp
+@@ -10,7 +10,10 @@
+ #define Y_OFFSET 1  // Vertical offset to prevent top row cutoff
+ #endif
+ 
+-#ifdef HELTEC_VISION_MASTER_T190
++#if DISPLAY_PORTRAIT
++  #define SCALE_X  1.875f      // 135 / 72   (SFM portrait: uniform, nothing stretched)
++  #define SCALE_Y  1.875f      // 240 / 128
++#elif defined(HELTEC_VISION_MASTER_T190)
+   #define SCALE_X  2.5f        // 320 / 128
+   #define SCALE_Y  2.65625f    // 170 / 64
+ #else
+@@ -50,10 +53,8 @@ bool ST7789Display::begin() {
+     digitalWrite(PIN_TFT_RST, HIGH);
+ 
+     display.init();
+-    display.landscapeScreen();
+-    #ifdef DISPLAY_FLIP_VERTICALLY
+-    display.flipScreenVertically();
+-    #endif
++    applyOrientation();
++    display.forceFullRedraw();   // SFM: paint every pixel once, or panel RAM noise stays where nothing is drawn
+     display.displayOn();
+     setCursor(0,0);
+ 
+@@ -71,9 +72,8 @@ void ST7789Display::turnOn() {
+     // Re-initialize the display
+     display.init();
+     display.displayOn();
+-    #ifdef DISPLAY_FLIP_VERTICALLY
+-    display.flipScreenVertically();
+-    #endif
++    applyOrientation();
++    display.forceFullRedraw();
+     delay(20);
+ 
+     // Now turn on the backlight
+@@ -86,6 +86,23 @@ void ST7789Display::turnOn() {
+   }
+ }
+ 
++void ST7789Display::applyOrientation() {
++#if DISPLAY_PORTRAIT
++  display.portraitScreen(_flip);
++#else
++  if (_flip) display.flipScreenVertically(); else display.landscapeScreen();
++#endif
++}
++
++void ST7789Display::setFlip(bool flip) {
++  if (flip == _flip) return;
++  _flip = flip;
++  if (_isOn) {
++    applyOrientation();
++    display.forceFullRedraw();
++  }
++}
++
+ void ST7789Display::turnOff() {
+   digitalWrite(PIN_TFT_VDD_CTL, HIGH);
+ #ifdef PIN_TFT_LEDA_CTL_ACTIVE
+@@ -113,6 +130,7 @@ void ST7789Display::setTextSize(int sz) {
+       display.setFont(ArialMT_Plain_16);
+       break;
+     case 2 :
++    case 3 :
+       display.setFont(ArialMT_Plain_24);
+       break;
+     default:
+diff --git a/src/helpers/ui/ST7789Display.h b/src/helpers/ui/ST7789Display.h
+index 580ad46..7607d15 100644
+--- a/src/helpers/ui/ST7789Display.h
++++ b/src/helpers/ui/ST7789Display.h
+@@ -11,6 +11,12 @@ class ST7789Display : public DisplayDriver {
+   bool _isOn;
+   uint16_t _color;
+   int _x=0, _y=0;
++#ifdef DISPLAY_FLIP_VERTICALLY
++  bool _flip = true;
++#else
++  bool _flip = false;   // SFM: "ui flip on|off" turns the screen 180 degrees at runtime
++#endif
++  void applyOrientation();
+ 
+   bool i2c_probe(TwoWire& wire, uint8_t addr);
+ public:
+@@ -18,6 +24,9 @@ public:
+   ST7789Display() : DisplayDriver(128, 64), display(&SPI, PIN_TFT_RST, PIN_TFT_DC, PIN_TFT_CS, GEOMETRY_RAWMODE, 320, 170,PIN_TFT_SDA,-1,PIN_TFT_SCL) {_isOn = false;}
+ #elif defined(THINKNODE_M9)
+   ST7789Display() : DisplayDriver(128, 64), display(&SPI, ST7789_RESET, ST7789_RS, ST7789_CS, GEOMETRY_RAWMODE, 320, 240, ST7789_SDA, ST7789_MISO, ST7789_SCK) {_isOn = false;}
++#elif DISPLAY_PORTRAIT
++  // SFM: portrait - 72x128 virtual canvas on the 135x240 panel (same 1.875 scale both ways)
++  ST7789Display() : DisplayDriver(72, 128), display(&SPI1, PIN_TFT_RST, PIN_TFT_DC, PIN_TFT_CS, GEOMETRY_RAWMODE, 135, 240) {_isOn = false;}
+ #else
+   ST7789Display() : DisplayDriver(128, 64), display(&SPI1, PIN_TFT_RST, PIN_TFT_DC, PIN_TFT_CS, GEOMETRY_RAWMODE, 240, 135) {_isOn = false;}
+ #endif
+@@ -38,4 +47,5 @@ public:
+   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
+   uint16_t getTextWidth(const char* str) override;
+   void endFrame() override;
++  void setFlip(bool flip);   // SFM
+ };
+diff --git a/src/helpers/ui/ST7789Spi.h b/src/helpers/ui/ST7789Spi.h
+index 09af645..4e0463b 100644
+--- a/src/helpers/ui/ST7789Spi.h
++++ b/src/helpers/ui/ST7789Spi.h
+@@ -106,6 +106,8 @@ class ST7789Spi : public OLEDDisplay {
+       SPISettings 		    _spiSettings;
+       uint16_t            _RGB=0xFFFF;
+       uint8_t             _buffheight;
++      bool                _portrait = false;   // SFM
++      bool                _pflip = false;      // SFM
+   public:
+     /* pass _cs as -1 to indicate "do not use CS pin", for cases where it is hard wired low */
+     ST7789Spi(SPIClass *spiClass,uint8_t _rst, uint8_t _dc, uint8_t _cs, OLEDDISPLAY_GEOMETRY g = GEOMETRY_RAWMODE,uint16_t width=240,uint16_t height=135,int mosi=-1,int miso=-1,int clk=-1) {
+@@ -262,6 +264,23 @@ class ST7789Spi : public OLEDDisplay {
+ 	delay(10);
+   }
+ 
++  // SFM: portrait (no row/column exchange); flip = rotated 180 degrees
++  virtual void portraitScreen(bool flip) {
++    _portrait = true;
++    _pflip = flip;
++    uint8_t madctl = ST77XX_MADCTL_RGB | (flip ? (ST77XX_MADCTL_MX | ST77XX_MADCTL_MY) : 0);
++    sendCommand(ST77XX_MADCTL);
++    WriteData(madctl);
++    delay(10);
++  }
++
++  // SFM: make the next display() repaint everything (after an orientation change)
++  void forceFullRedraw() {
++#ifdef OLEDDISPLAY_DOUBLE_BUFFER
++    for (uint32_t i = 0; i < displayBufferSize; i++) buffer_back[i] = ~buffer[i];
++#endif
++  }
++
+   virtual void landscapeScreen() {
+     // For landscape mode rotated 180 degrees with correct text direction
+     // MV swaps rows/columns for landscape orientation
+@@ -366,8 +385,13 @@ class ST7789Spi : public OLEDDisplay {
+   private:
+ 
+    void setAddrWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+-    x += (320-displayWidth)/2;
+-    y += (240-displayHeight)/2;
++    if (_portrait) {   // SFM: 135x240 window in the 240x320 RAM: col 52 (53 rotated 180), row 40
++      x += (240-displayWidth)/2 + (_pflip ? 1 : 0);
++      y += (320-displayHeight)/2;
++    } else {
++      x += (320-displayWidth)/2;
++      y += (240-displayHeight)/2;
++    }
+     
+     uint32_t xa = ((uint32_t)x << 16) | (x + w - 1);
+     uint32_t ya = ((uint32_t)y << 16) | (y + h - 1);
+diff --git a/variants/heltec_t114/T114Board.cpp b/variants/heltec_t114/T114Board.cpp
+index cd1daf4..84f9cb7 100644
+--- a/variants/heltec_t114/T114Board.cpp
++++ b/variants/heltec_t114/T114Board.cpp
+@@ -6,6 +6,8 @@ volatile char g_ui_inject_key = 0;
+ volatile bool g_ui_msg_wake = true;
+ // SFM: "time force <epoch>" - lets the Pi set the clock backwards (stock CLI refuses)
+ volatile uint32_t g_force_time = 0;
++// SFM: "ui flip on|off" - screen rotated 180 degrees
++volatile bool g_ui_flip = false;
+ 
+ #include <Arduino.h>
+ #include <Wire.h>
+diff --git a/variants/heltec_t114/T114Board.h b/variants/heltec_t114/T114Board.h
+index 03438e6..d995b0e 100644
+--- a/variants/heltec_t114/T114Board.h
++++ b/variants/heltec_t114/T114Board.h
+@@ -7,6 +7,7 @@
+ extern volatile char g_ui_inject_key;   // SFM: see T114Board.cpp
+ extern volatile bool g_ui_msg_wake;
+ extern volatile uint32_t g_force_time;
++extern volatile bool g_ui_flip;
+ 
+ // built-ins
+ #define  PIN_VBAT_READ    4
+@@ -56,6 +57,11 @@ public:
+       strcpy(reply, "OK");
+       return true;
+     }
++    if (strcmp(command, "ui flip on") == 0 || strcmp(command, "ui flip off") == 0) {
++      g_ui_flip = command[9] == 'n';
++      strcpy(reply, "OK");
++      return true;
++    }
+     if (strcmp(command, "ui msgwake on") == 0 || strcmp(command, "ui msgwake off") == 0) {
+       g_ui_msg_wake = command[13] == 'n';
+       strcpy(reply, "OK");
+diff --git a/variants/heltec_t114/platformio.ini b/variants/heltec_t114/platformio.ini
+index d0c7c18..6e3e9d1 100644
+--- a/variants/heltec_t114/platformio.ini
++++ b/variants/heltec_t114/platformio.ini
+@@ -239,6 +239,9 @@ build_flags =
+   -D SERIAL_RX=PIN_SERIAL2_RX   ; SFM: companion protocol to the Pi over UART too
+   -D SERIAL_TX=PIN_SERIAL2_TX
+   -D UI_KEY_INJECT   ; SFM: "ui ..." CLI command drives the screen
++  -D DISPLAY_PORTRAIT=1        ; SFM: screen used vertically (64x128 layout)
++  -D UI_RECENT_LIST_SIZE=8     ; SFM: taller screen fits 8 recent adverts
++  -D UI_MSG_PREVIEW_SIZE=140   ; SFM: and longer message previews
+ ;  -D BLE_DEBUG_LOGGING=1
+   -D OFFLINE_QUEUE_SIZE=256
+ ;  -D MESH_PACKET_LOGGING=1

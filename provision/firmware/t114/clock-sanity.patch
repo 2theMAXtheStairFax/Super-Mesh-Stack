@@ -1,0 +1,101 @@
+diff --git a/examples/companion_radio/MyMesh.cpp b/examples/companion_radio/MyMesh.cpp
+index f32ea67..804b436 100644
+--- a/examples/companion_radio/MyMesh.cpp
++++ b/examples/companion_radio/MyMesh.cpp
+@@ -2066,6 +2066,10 @@ static bool save_filter(const ContactInfo& c) {
+   return c.type != ADV_TYPE_NONE;   // don't save the transient/anon entries
+ }
+ 
++void MyMesh::onClockSetBack(uint32_t now) {   // SFM
++  if (clampContactTimes(now) > 0) dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
++}
++
+ void MyMesh::saveContacts() {
+   _store->saveContacts(this, save_filter);
+ }
+diff --git a/examples/companion_radio/MyMesh.h b/examples/companion_radio/MyMesh.h
+index 944790d..a5b85fd 100644
+--- a/examples/companion_radio/MyMesh.h
++++ b/examples/companion_radio/MyMesh.h
+@@ -122,6 +122,8 @@ public:
+   void loop();
+   void handleCmdFrame(size_t len);
+   bool advert();
++  // SFM: clock went backwards (Pi "time force" or GPS sync) - fix future-dated contacts and save them
++  void onClockSetBack(uint32_t now);
+   void enterCLIRescue();
+ 
+   int  getRecentlyHeard(AdvertPath dest[], int max_num);
+diff --git a/examples/companion_radio/ui-new/UITask.cpp b/examples/companion_radio/ui-new/UITask.cpp
+index 0475f8e..32a6e68 100644
+--- a/examples/companion_radio/ui-new/UITask.cpp
++++ b/examples/companion_radio/ui-new/UITask.cpp
+@@ -1085,6 +1085,12 @@ void UITask::loop() {
+     _next_refresh = 0;
+   }
+ #endif
++  {                                  // SFM: whenever the clock jumps back, no contact may stay in the future
++    static uint32_t last_clock = 0;
++    uint32_t now_c = rtc_clock.getCurrentTime();
++    if (last_clock && now_c + 60 < last_clock) the_mesh.onClockSetBack(now_c);
++    last_clock = now_c;
++  }
+   if (g_force_time) {               // SFM: clock correction from the Pi
+     rtc_clock.setCurrentTime(g_force_time);
+     g_force_time = 0;
+diff --git a/src/helpers/BaseChatMesh.cpp b/src/helpers/BaseChatMesh.cpp
+index 2859241..f47df3f 100644
+--- a/src/helpers/BaseChatMesh.cpp
++++ b/src/helpers/BaseChatMesh.cpp
+@@ -60,7 +60,8 @@ void BaseChatMesh::sendAckTo(const ContactInfo& dest, const uint8_t* ack_hash, u
+ void BaseChatMesh::bootstrapRTCfromContacts() {
+   uint32_t latest = 0;
+   for (int i = 0; i < num_contacts; i++) {
+-    if (contacts[i].lastmod > latest) {
++    // SFM: skip impossible (far-future) stamps - one bad clock must not survive every reboot
++    if (contacts[i].lastmod > latest && contacts[i].lastmod < SFM_MAX_SANE_TIME) {
+       latest = contacts[i].lastmod;
+     }
+   }
+@@ -69,6 +70,17 @@ void BaseChatMesh::bootstrapRTCfromContacts() {
+   }
+ }
+ 
++int BaseChatMesh::clampContactTimes(uint32_t now) {   // SFM
++  int n = 0;
++  for (int i = 0; i < num_contacts; i++) {
++    if (contacts[i].lastmod > now) {
++      contacts[i].lastmod = now;
++      n++;
++    }
++  }
++  return n;
++}
++
+ ContactInfo* BaseChatMesh::allocateContactSlot(bool transient_only) {
+   int oldest_idx = -1;
+   uint32_t oldest_lastmod = 0xFFFFFFFF;
+diff --git a/src/helpers/BaseChatMesh.h b/src/helpers/BaseChatMesh.h
+index 835384b..f6c26b1 100644
+--- a/src/helpers/BaseChatMesh.h
++++ b/src/helpers/BaseChatMesh.h
+@@ -57,6 +57,10 @@ struct ConnectionInfo {
+ /**
+  *  \brief  abstract Mesh class for common 'chat' client
+  */
++#ifndef SFM_MAX_SANE_TIME
++  #define SFM_MAX_SANE_TIME 2000000000UL   // 2033-05-18: anything later is a bad clock
++#endif
++
+ class BaseChatMesh : public mesh::Mesh {
+ 
+   friend class ContactsIterator;
+@@ -93,6 +97,8 @@ protected:
+   }
+ 
+   void bootstrapRTCfromContacts();
++  // SFM: after the clock is set back, pull future-dated contacts to `now`; returns how many
++  int clampContactTimes(uint32_t now);
+ 
+   void resetContacts() {
+     memset(contacts, 0, sizeof(contacts[0])*MAX_ANON_CONTACTS);   // set all to have type = ADV_TYPE_NONE(0)

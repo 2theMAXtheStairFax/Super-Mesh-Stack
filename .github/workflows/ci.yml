@@ -1,0 +1,43 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: node --test "configurator/test/*.test.js"
+      - run: python -m py_compile provision/app/*.py provision/maps/fetch_tiles.py
+      - run: python -m unittest provision/tests/test_mux.py
+      - run: for f in provision/setup.sh provision/net/netmode.sh provision/app/*.sh provision/firmware/t114/build.sh; do bash -n "$f"; done
+      - run: sudo apt-get install -y shellcheck && shellcheck -S warning provision/setup.sh provision/net/netmode.sh provision/app/add-channels.sh
+      - run: python tools/scan_private.py
+
+  pages:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: configurator
+      - id: deploy
+        uses: actions/deploy-pages@v4

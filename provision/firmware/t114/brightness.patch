@@ -1,0 +1,153 @@
+diff --git a/examples/companion_radio/ui-new/UITask.cpp b/examples/companion_radio/ui-new/UITask.cpp
+index 9bb9e99..3a94087 100644
+--- a/examples/companion_radio/ui-new/UITask.cpp
++++ b/examples/companion_radio/ui-new/UITask.cpp
+@@ -9,6 +9,7 @@ extern volatile char g_ui_inject_key;   // SFM: set by the "ui ..." CLI command
+ extern volatile bool g_ui_msg_wake;     // SFM: "ui msgwake on|off"
+ extern volatile uint32_t g_force_time;  // SFM: "time force <epoch>"
+ extern volatile bool g_ui_flip;         // SFM: "ui flip on|off"
++extern volatile uint8_t g_ui_bright;    // SFM: "ui bright <5-100>"
+ #endif
+ #ifdef ENABLE_WIFI_INTERFACE
+   #include <WiFi.h>
+@@ -1084,6 +1085,7 @@ void UITask::loop() {
+     display.setFlip(flip_applied);
+     _next_refresh = 0;
+   }
++  display.setBrightness(g_ui_bright);   // SFM: no-op unless it changed
+ #endif
+   {                                  // SFM: whenever the clock jumps back, no contact may stay in the future
+     static uint32_t last_clock = 0;
+diff --git a/src/helpers/ui/ST7789Display.cpp b/src/helpers/ui/ST7789Display.cpp
+index 906b895..c5a2772 100644
+--- a/src/helpers/ui/ST7789Display.cpp
++++ b/src/helpers/ui/ST7789Display.cpp
+@@ -45,11 +45,7 @@ bool ST7789Display::begin() {
+     pinMode(PIN_TFT_VDD_CTL, OUTPUT);
+     pinMode(PIN_TFT_LEDA_CTL, OUTPUT);
+     digitalWrite(PIN_TFT_VDD_CTL, LOW);
+-  #ifdef PIN_TFT_LEDA_CTL_ACTIVE
+-    digitalWrite(PIN_TFT_LEDA_CTL, PIN_TFT_LEDA_CTL_ACTIVE);
+-  #else
+-    digitalWrite(PIN_TFT_LEDA_CTL, LOW);
+-  #endif
++    writeBacklight(true);   // SFM: honours the brightness setting
+     digitalWrite(PIN_TFT_RST, HIGH);
+ 
+     display.init();
+@@ -77,15 +73,35 @@ void ST7789Display::turnOn() {
+     delay(20);
+ 
+     // Now turn on the backlight
+-  #ifdef PIN_TFT_LEDA_CTL_ACTIVE
+-    digitalWrite(PIN_TFT_LEDA_CTL, PIN_TFT_LEDA_CTL_ACTIVE);
+-  #else
+-    digitalWrite(PIN_TFT_LEDA_CTL, LOW);
+-  #endif    
++    writeBacklight(true);   // SFM: honours the brightness setting    
+     _isOn = true;
+   }
+ }
+ 
++// SFM: backlight with brightness - PWM on the LEDA pin below 100 %
++void ST7789Display::writeBacklight(bool on) {
++#ifdef PIN_TFT_LEDA_CTL_ACTIVE
++  const bool active_high = PIN_TFT_LEDA_CTL_ACTIVE == HIGH;
++#else
++  const bool active_high = false;   // T114: LOW = backlight on
++#endif
++  int level = on ? (int)_bright * 255 / 100 : 0;
++  if (_pwm_used || (on && _bright < 100)) {
++    analogWrite(PIN_TFT_LEDA_CTL, active_high ? level : 255 - level);
++    _pwm_used = true;
++  } else {
++    digitalWrite(PIN_TFT_LEDA_CTL, on == active_high ? HIGH : LOW);
++  }
++}
++
++void ST7789Display::setBrightness(uint8_t pct) {
++  if (pct < 5) pct = 5;
++  if (pct > 100) pct = 100;
++  if (pct == _bright) return;
++  _bright = pct;
++  if (_isOn) writeBacklight(true);
++}
++
+ void ST7789Display::applyOrientation() {
+ #if DISPLAY_PORTRAIT
+   display.portraitScreen(_flip);
+@@ -105,11 +121,7 @@ void ST7789Display::setFlip(bool flip) {
+ 
+ void ST7789Display::turnOff() {
+   digitalWrite(PIN_TFT_VDD_CTL, HIGH);
+-#ifdef PIN_TFT_LEDA_CTL_ACTIVE
+-  digitalWrite(PIN_TFT_LEDA_CTL, !PIN_TFT_LEDA_CTL_ACTIVE);
+-#else
+-  digitalWrite(PIN_TFT_LEDA_CTL, HIGH);
+-#endif
++  writeBacklight(false);
+   digitalWrite(PIN_TFT_RST, LOW);
+   _isOn = false;
+ }
+diff --git a/src/helpers/ui/ST7789Display.h b/src/helpers/ui/ST7789Display.h
+index 7607d15..5d7fd40 100644
+--- a/src/helpers/ui/ST7789Display.h
++++ b/src/helpers/ui/ST7789Display.h
+@@ -17,6 +17,9 @@ class ST7789Display : public DisplayDriver {
+   bool _flip = false;   // SFM: "ui flip on|off" turns the screen 180 degrees at runtime
+ #endif
+   void applyOrientation();
++  uint8_t _bright = 100;    // SFM: "ui bright <5-100>"
++  bool _pwm_used = false;
++  void writeBacklight(bool on);
+ 
+   bool i2c_probe(TwoWire& wire, uint8_t addr);
+ public:
+@@ -48,4 +51,5 @@ public:
+   uint16_t getTextWidth(const char* str) override;
+   void endFrame() override;
+   void setFlip(bool flip);   // SFM
++  void setBrightness(uint8_t pct);   // SFM
+ };
+diff --git a/variants/heltec_t114/T114Board.cpp b/variants/heltec_t114/T114Board.cpp
+index 84f9cb7..3135c58 100644
+--- a/variants/heltec_t114/T114Board.cpp
++++ b/variants/heltec_t114/T114Board.cpp
+@@ -8,6 +8,8 @@ volatile bool g_ui_msg_wake = true;
+ volatile uint32_t g_force_time = 0;
+ // SFM: "ui flip on|off" - screen rotated 180 degrees
+ volatile bool g_ui_flip = false;
++// SFM: "ui bright <5-100>" - screen backlight level
++volatile uint8_t g_ui_bright = 100;
+ 
+ #include <Arduino.h>
+ #include <Wire.h>
+diff --git a/variants/heltec_t114/T114Board.h b/variants/heltec_t114/T114Board.h
+index d995b0e..cd3639c 100644
+--- a/variants/heltec_t114/T114Board.h
++++ b/variants/heltec_t114/T114Board.h
+@@ -8,6 +8,7 @@ extern volatile char g_ui_inject_key;   // SFM: see T114Board.cpp
+ extern volatile bool g_ui_msg_wake;
+ extern volatile uint32_t g_force_time;
+ extern volatile bool g_ui_flip;
++extern volatile uint8_t g_ui_bright;
+ 
+ // built-ins
+ #define  PIN_VBAT_READ    4
+@@ -57,6 +58,16 @@ public:
+       strcpy(reply, "OK");
+       return true;
+     }
++    if (memcmp(command, "ui bright ", 10) == 0) {
++      long pct = strtol(&command[10], NULL, 10);
++      if (pct < 5 || pct > 100) {
++        strcpy(reply, "Error, ui bright 5-100");
++        return true;
++      }
++      g_ui_bright = (uint8_t)pct;
++      strcpy(reply, "OK");
++      return true;
++    }
+     if (strcmp(command, "ui flip on") == 0 || strcmp(command, "ui flip off") == 0) {
+       g_ui_flip = command[9] == 'n';
+       strcpy(reply, "OK");

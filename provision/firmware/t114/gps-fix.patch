@@ -1,0 +1,91 @@
+diff --git a/src/helpers/sensors/EnvironmentSensorManager.cpp b/src/helpers/sensors/EnvironmentSensorManager.cpp
+--- a/src/helpers/sensors/EnvironmentSensorManager.cpp
++++ b/src/helpers/sensors/EnvironmentSensorManager.cpp
+@@ -945,6 +945,26 @@
+ }
+ #endif
+ 
++#ifdef GPS_FIX_CMD
++// SFM: "gps fix" (T114Board) - lock state for the Pi. A valid fix only counts while
++// its GPS time keeps moving on, so a module that goes quiet doesn't read as locked.
++extern volatile bool g_gps_valid;
++extern volatile uint8_t g_gps_sats;
++extern volatile uint32_t g_gps_fix_ms;
++
++static void publishGpsFix(LocationProvider* loc) {
++  static long last_ts = 0;
++  g_gps_valid = loc->isValid();
++  g_gps_sats = (uint8_t)constrain(loc->satellitesCount(), 0, 255);
++  long ts = loc->getTimestamp();
++  if (g_gps_valid && ts != last_ts) {
++    last_ts = ts;
++    uint32_t now = millis();
++    g_gps_fix_ms = now ? now : 1;
++  }
++}
++#endif
++
+ #if ENV_INCLUDE_GPS || defined(ENV_INCLUDE_BME680_BSEC)
+ void EnvironmentSensorManager::loop() {
+ 
+@@ -952,6 +972,9 @@
+   static unsigned long next_gps_update = 0;
+   if (gps_active) {
+     _location->loop();
++    #ifdef GPS_FIX_CMD
++    publishGpsFix(_location);
++    #endif
+   }
+   if ((long)(millis() - next_gps_update) > 0) {
+ 
+diff --git a/variants/heltec_t114/T114Board.cpp b/variants/heltec_t114/T114Board.cpp
+--- a/variants/heltec_t114/T114Board.cpp
++++ b/variants/heltec_t114/T114Board.cpp
+@@ -13,6 +13,10 @@
+ // SFM: "gps skew on|off" - offset the GPS position 200 m before it's shared.
+ // On at boot so nothing goes out unskewed before the Pi re-sends its setting.
+ volatile bool g_gps_skew = true;
++// SFM: "gps fix" - lock state for the Pi, kept by EnvironmentSensorManager::loop()
++volatile bool g_gps_valid = false;
++volatile uint8_t g_gps_sats = 0;
++volatile uint32_t g_gps_fix_ms = 0;   // millis() when a valid fix last moved on (0 = never)
+ 
+ #include <Arduino.h>
+ #include <Wire.h>
+diff --git a/variants/heltec_t114/T114Board.h b/variants/heltec_t114/T114Board.h
+--- a/variants/heltec_t114/T114Board.h
++++ b/variants/heltec_t114/T114Board.h
+@@ -10,6 +10,9 @@
+ extern volatile bool g_ui_flip;
+ extern volatile uint8_t g_ui_bright;
+ extern volatile bool g_gps_skew;
++extern volatile bool g_gps_valid;
++extern volatile uint8_t g_gps_sats;
++extern volatile uint32_t g_gps_fix_ms;
+ 
+ // built-ins
+ #define  PIN_VBAT_READ    4
+@@ -83,6 +86,12 @@
+       strcpy(reply, g_gps_skew ? "> on" : "> off");
+       return true;
+     }
++    if (strcmp(command, "gps fix") == 0) {   // "> fix 1 sats 12 age 0": locked, satellites, s since the fix moved on
++      uint32_t at = g_gps_fix_ms;
++      long age = at ? (long)((millis() - at) / 1000) : -1L;
++      sprintf(reply, "> fix %d sats %d age %ld", g_gps_valid && at && age < 10 ? 1 : 0, (int)g_gps_sats, age);
++      return true;
++    }
+     if (strcmp(command, "ui msgwake on") == 0 || strcmp(command, "ui msgwake off") == 0) {
+       g_ui_msg_wake = command[13] == 'n';
+       strcpy(reply, "OK");
+diff --git a/variants/heltec_t114/platformio.ini b/variants/heltec_t114/platformio.ini
+--- a/variants/heltec_t114/platformio.ini
++++ b/variants/heltec_t114/platformio.ini
+@@ -240,6 +240,7 @@
+   -D SERIAL_TX=PIN_SERIAL2_TX
+   -D UI_KEY_INJECT   ; SFM: "ui ..." CLI command drives the screen
+   -D GPS_SKEW   ; SFM: "gps skew on|off" - shared position offset 200 m
++  -D GPS_FIX_CMD   ; SFM: "gps fix" - lock, satellites, fix age for the Pi
+   -D DISPLAY_PORTRAIT=1        ; SFM: screen used vertically (64x128 layout)
+   -D UI_RECENT_LIST_SIZE=8     ; SFM: taller screen fits 8 recent adverts
+   -D UI_MSG_PREVIEW_SIZE=140   ; SFM: and longer message previews

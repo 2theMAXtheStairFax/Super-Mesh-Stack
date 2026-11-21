@@ -1,0 +1,57 @@
+diff --git a/examples/companion_radio/main.cpp b/examples/companion_radio/main.cpp
+index 839d495..2113dac 100644
+--- a/examples/companion_radio/main.cpp
++++ b/examples/companion_radio/main.cpp
+@@ -80,7 +80,11 @@ MultiSerialInterface interface_manager;
+ #if defined(SERIAL_RX)
+   #include <helpers/ArduinoSerialInterface.h>
+   ArduinoSerialInterface hardware_serial_interface;
+-  HardwareSerial companion_serial(1);
++  #if defined(NRF52_PLATFORM)
++    #define companion_serial Serial2   // nRF52 core: UARTE1, pins from setPins() below
++  #else
++    HardwareSerial companion_serial(1);
++  #endif
+ #endif
+ 
+ // platform file system
+@@ -269,6 +273,9 @@ void setup() {
+ // add hardware serial interface
+ #if defined(SERIAL_RX)
+   companion_serial.setPins(SERIAL_RX, SERIAL_TX);
++#if defined(NRF52_PLATFORM)
++  pinMode(SERIAL_RX, INPUT_PULLUP);  // idle-high when no host is wired, so no noise frames
++#endif
+   companion_serial.begin(115200);
+   hardware_serial_interface.begin(companion_serial);
+   interface_manager.addInterface(InterfaceType::HardwareSerial, &hardware_serial_interface);
+diff --git a/variants/heltec_t114/platformio.ini b/variants/heltec_t114/platformio.ini
+index c265dbf..9394310 100644
+--- a/variants/heltec_t114/platformio.ini
++++ b/variants/heltec_t114/platformio.ini
+@@ -236,6 +236,8 @@ build_flags =
+   -D BLE_PIN_CODE=123456
+   -D ENABLE_USB_INTERFACE
+   -D ENV_INCLUDE_GPS=1   ; enable the GPS page in UI
++  -D SERIAL_RX=PIN_SERIAL2_RX   ; SFM: companion protocol to the Pi over UART too
++  -D SERIAL_TX=PIN_SERIAL2_TX
+ ;  -D BLE_DEBUG_LOGGING=1
+   -D OFFLINE_QUEUE_SIZE=256
+ ;  -D MESH_PACKET_LOGGING=1
+diff --git a/variants/heltec_t114/variant.h b/variants/heltec_t114/variant.h
+index 6e12447..f4036cd 100644
+--- a/variants/heltec_t114/variant.h
++++ b/variants/heltec_t114/variant.h
+@@ -52,8 +52,10 @@
+ #define PIN_SERIAL1_RX          (37)
+ #define PIN_SERIAL1_TX          (39)
+ 
+-#define PIN_SERIAL2_RX          (9)
+-#define PIN_SERIAL2_TX          (10)
++// SFM: Serial2 is the companion link to the Pi (P1 header). GPIO9/10 belong
++// to the GPS on Serial1, so Serial2 moves to P1-8 (P1.01) / P1-6 (P0.16).
++#define PIN_SERIAL2_RX          (33)  // P1.01, P1-8 <- Pi TXD (GPIO14, pin 8)
++#define PIN_SERIAL2_TX          (16)  // P0.16, P1-6 -> Pi RXD (GPIO15, pin 10)
+ 
+ ////////////////////////////////////////////////////////////////////////////////
+ // I2C pin definition

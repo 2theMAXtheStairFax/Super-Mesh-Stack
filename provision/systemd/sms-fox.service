@@ -1,0 +1,20 @@
+[Unit]
+Description=Mesh Stack - Fox aerial telemetry (Mission Planner MAVLink mirror -> fox.json)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mesh
+WorkingDirectory=/opt/mesh-stack
+Environment=SMS_DIR=/opt/mesh-stack
+# default only - the web Config tab's fox_mavlink (config.json) wins. Listens for
+# Mission Planner's MAVLink Mirror (UDP Client -> this Pi, port 14550); read-only.
+Environment=SMS_FOX_MAVLINK=udpin:0.0.0.0:14550
+EnvironmentFile=-/etc/mesh-stack/stack.env
+ExecStart=/opt/mesh-stack/venv/bin/python /opt/mesh-stack/fox.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Mesh Stack Configurator</title>
+<meta name="description" content="Build a MeshCore Raspberry Pi node: pick your hardware, get the config, wiring and install steps.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>Super Mesh Stack</h1>
+    <p>Configure a MeshCore Raspberry Pi node. Everything runs in this page; nothing is uploaded.</p>
+  </div>
+  <div class="actions">
+    <button type="button" id="import" class="ghost">Import answers</button>
+    <input type="file" id="importFile" accept="application/json" hidden>
+    <button type="button" id="download" class="primary">Download bundle</button>
+  </div>
+</header>
+
+<main>
+  <form id="form" autocomplete="off" novalidate>
+
+    <fieldset>
+      <legend>Board and radio</legend>
+      <label>Board
+        <select name="pi"></select>
+      </label>
+      <label>Radio link
+        <select name="link">
+          <option value="uart">UART wires (patched T114 firmware)</option>
+          <option value="usb">USB cable (stock or patched firmware)</option>
+        </select>
+        <small>UART frees the USB port and avoids USB inrush on battery. It needs the patched firmware in this repo.</small>
+      </label>
+      <label class="check"><input type="checkbox" name="wakeWire"> Radio wakes the Pi from halt (GPIO3, pin 5)</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Hardware</legend>
+      <label class="check"><input type="checkbox" name="lcd"> 0.96&Prime; ST7735 screen and I&sup2;C joystick</label>
+      <label class="check"><input type="checkbox" name="argon"> Argon Fan HAT (fan curve and power button)</label>
+      <label class="check"><input type="checkbox" name="gpioShutdown"> Clean shutdown from GPIO3 held low <small>(not with Argon)</small></label>
+      <label class="check"><input type="checkbox" name="power"> Battery monitor (INA219 or UPS HAT)</label>
+      <div class="sub" data-show="power">
+        <label>INA219 address <input name="inaAddr" size="6"></label>
+        <label>Cells in series <input name="cells" type="number" min="1" max="4"></label>
+        <small>Cutoffs are set per cell (3.6 / 3.4 / 3.3 V) and scaled by the cell count.</small>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Wi-Fi and access</legend>
+      <label>Access point name <input name="apSsid" maxlength="32"></label>
+      <label>Access point passphrase
+        <span class="row"><input name="apPass" type="text" spellcheck="false" placeholder="blank = generated on the Pi"><button type="button" class="ghost" id="gen">Generate</button></span>
+        <small>The node falls back to this AP when no known network is in range, so it is never unreachable.</small>
+      </label>
+      <label>Home Wi-Fi connection name <input name="homeCon"><small>The NetworkManager profile Raspberry Pi Imager creates is called <code>preconfigured</code>.</small></label>
+      <label>Mobile router SSID <input name="mobileSsid" maxlength="32" placeholder="optional"></label>
+      <label data-show-field="mobileSsid">Mobile router passphrase <input name="mobilePass" type="text" spellcheck="false"></label>
+      <label class="check"><input type="checkbox" name="appAccess"> Let the MeshCore phone app connect over the network</label>
+      <div class="sub" data-show="appAccess">
+        <label>TCP port <input name="appPort" type="number" min="1024" max="65535"></label>
+        <label>Extra allowed networks <input name="appAllow" placeholder="192.168.1.0/24, 10.0.0.0/8"><small>Loopback and Tailscale are always allowed. There is no authentication, so keep this narrow.</small></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Mesh bot</legend>
+      <label>Channels <small>One per line, <code>#name</code>. Up to 7 beyond Public.</small>
+        <textarea name="channels" rows="4" spellcheck="false"></textarea>
+      </label>
+      <label>Bot channel
+        <select name="botChannel"></select>
+        <small>The bot answers only here and in direct messages, and only when addressed.</small>
+      </label>
+      <label>Command word <input name="cmdPrefix" maxlength="12"><small>Say <code>&lt;word&gt; wx</code> in the channel.</small></label>
+      <label>Weather station node <input name="wxNode" placeholder="optional contact name or key prefix"></label>
+      <label>Power off after silence (seconds) <input name="idlePoweroff" type="number" min="0"><small>0 = never.</small></label>
+      <label class="check"><input type="checkbox" name="wardrive"> Coverage log (repeaters that hear your <code>#wardriving</code> pings)</label>
+      <label class="check"><input type="checkbox" name="fox"> Aerial repeater telemetry (MAVLink listener, off until you switch it on)</label>
+      <label>Flood scope <input name="regionScope" placeholder="blank unless your mesh uses scopes, e.g. us-tx-aus"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>System</legend>
+      <label>Hostname <input name="hostname"></label>
+      <label>Time zone <input name="tz" list="tzlist"><datalist id="tzlist"></datalist></label>
+      <label class="check"><input type="checkbox" name="harden"> SD-card hardening (zram, RAM-only logs, noatime)</label>
+      <label class="check"><input type="checkbox" name="avahi"> Keep mDNS so <code>hostname.local</code> works</label>
+      <label class="check"><input type="checkbox" name="platformio"> Install PlatformIO on the Pi (only to build firmware there)</label>
+      <label>Offline map area <input name="bbox" placeholder="west,south,east,north (optional)"><small id="tiles"></small></label>
+    </fieldset>
+  </form>
+
+  <aside id="preview">
+    <div id="notes"></div>
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <pre id="out" tabindex="0"></pre>
+  </aside>
+</main>
+
+<script src="stack.js"></script>
+<script src="zip.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+[Unit]
+Description=Mesh Stack - passive TCP<->serial bridge (network access to the radio)
+After=multi-user.target
+# mutually exclusive with sms-meshbot - both want the serial port
+Conflicts=sms-meshbot.service
+
+[Service]
+Type=simple
+User=mesh
+WorkingDirectory=/opt/mesh-stack
+# the P1-header UART to the T114; /dev/ttyACM0 if it's on USB instead
+Environment=SMS_SERIAL=/dev/serial0
+Environment=SMS_BAUD=115200
+Environment=SMS_BRIDGE_PORT=5000
+EnvironmentFile=-/etc/mesh-stack/stack.env
+ExecStart=/opt/mesh-stack/venv/bin/python /opt/mesh-stack/bridge.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

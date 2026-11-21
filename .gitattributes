@@ -1,0 +1,22 @@
+# Provisioning files run on Linux — keep LF regardless of host autocrlf
+*.sh              text eol=lf
+*.py              text eol=lf
+*.service         text eol=lf
+*.md              text eol=lf
+config.txt.append text eol=lf
+
+# Binary assets — never touch line endings
+*.png  binary
+*.ico  binary
+*.uf2  binary
+*.jpg  binary
+*.zip  binary
+*.pbf  binary
+*.mbtiles binary
+*.patch          text eol=lf
+*.js            text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.yml           text eol=lf
+*.json          text eol=lf
+*.txt           text eol=lf
