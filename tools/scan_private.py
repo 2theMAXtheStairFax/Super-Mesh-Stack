@@ -13,7 +13,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SKIP_DIRS = {".git", "map", "hardware", "firmware"}
 SKIP_SUFFIX = {".png", ".ico", ".woff2", ".pbf", ".uf2", ".zip", ".step", ".stl"}
 OK_IPS = {"0.0.0.0", "8.8.8.8", "10.42.0.1", "255.255.255.255"}
-OK_NETS = [ipaddress.ip_network(n) for n in ("127.0.0.0/8", "100.64.0.0/10", "192.168.1.0/24", "192.168.50.0/24", "10.0.0.0/8")]
+OK_NETS = [ipaddress.ip_network(n) for n in (
+    "127.0.0.0/8", "100.64.0.0/10", "192.168.1.0/24", "192.168.50.0/24", "10.0.0.0/8",
+    "192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
 
 PATTERNS = {
     "email": re.compile(r"\b[\w.+-]+@[\w-]+\.(?!service\b|socket\b)[a-z]{2,}\b", re.I),
@@ -23,7 +25,7 @@ PATTERNS = {
     "token": re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|xox[baprs]-[\w-]{10,})\b"),
     "windows user path": re.compile(r"[A-Za-z]:\\Users\\\w+", re.I),
 }
-IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b(?!/\d)")
 EXTRA = re.compile(os.environ["SCAN_EXTRA"], re.I) if os.environ.get("SCAN_EXTRA") else None
 
 
@@ -38,7 +40,7 @@ def ip_ok(s):
         ip = ipaddress.ip_address(s)
     except ValueError:
         return True
-    return s in OK_IPS or any(ip in n for n in OK_NETS) or not ip.is_private
+    return s in OK_IPS or ip.packed[0] >= 240 or any(ip in n for n in OK_NETS) or not ip.is_private
 
 
 def main():

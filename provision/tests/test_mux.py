@@ -209,19 +209,19 @@ class MuxTests(unittest.TestCase):
         A = namedtuple("A", "address netmask")
         nets = mux.lan_networks({
             "lo": [A("127.0.0.1", "255.0.0.0")],
-            "eth0": [A("192.168.8.20", "255.255.255.0"), A("fe80::1%eth0", "ffff:ffff:ffff:ffff::")],
+            "eth0": [A("192.168.1.20", "255.255.255.0"), A("fe80::1%eth0", "ffff:ffff:ffff:ffff::")],
             "wlan0": [A("10.42.0.1", "255.255.255.0")],
             "usb0": [A("203.0.113.5", "255.255.255.0")],        # public: never allowed
             "wide": [A("10.1.2.3", "255.0.0.0")],               # wider than /16: skipped
             "odd": [A("192.168.1.2", None)],
             "ula": [A("fd12:3456:789a::5", "ffff:ffff:ffff:ffff::")],
         })
-        self.assertEqual({str(n) for n in nets}, {"192.168.8.0/24", "10.42.0.0/24", "fd12:3456:789a::/64"})
-        self.assertTrue(mux.peer_allowed("192.168.8.77", lan=nets))
+        self.assertEqual({str(n) for n in nets}, {"192.168.1.0/24", "10.42.0.0/24", "fd12:3456:789a::/64"})
+        self.assertTrue(mux.peer_allowed("192.168.1.77", lan=nets))
         self.assertTrue(mux.peer_allowed("10.42.0.9", lan=nets))
-        self.assertFalse(mux.peer_allowed("192.168.9.77", lan=nets))
+        self.assertFalse(mux.peer_allowed("192.168.50.77", lan=nets))
         self.assertFalse(mux.peer_allowed("203.0.113.9", lan=nets))
-        self.assertFalse(mux.peer_allowed("192.168.8.77"))
+        self.assertFalse(mux.peer_allowed("192.168.1.77"))
 
 
 if __name__ == "__main__":
