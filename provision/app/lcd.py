@@ -1154,8 +1154,10 @@ time.sleep(1)
 
 def wake_in(drawn_at):
     """Seconds until the next redraw: the full refresh, or the next title scroll step."""
+    if not screen_on:
+        return 0.5      # nothing to draw; a button edge still wakes wait() at once
     t = max(0.0, drawn_at + REFRESH - time.monotonic())
-    return min(t, MARQUEE_DT) if _mq['active'] and screen_on else t
+    return min(t, MARQUEE_DT) if _mq['active'] else t
 
 ui = UI()
 led_color, drawn_at, last_img = None, 0.0, None
