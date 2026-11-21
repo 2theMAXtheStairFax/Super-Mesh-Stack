@@ -136,7 +136,7 @@ test('GPS: only the three known options validate', () => {
 
 test('GPS: warnings match what the bundled firmware can actually do', () => {
   const w = (o) => Stack.validate(base(o)).warnings.join(' ');
-  assert.match(w({ gps: 'l76k', link: 'uart' }), /set up for the M10/);
+  assert.doesNotMatch(w({ gps: 'l76k', link: 'uart' }), /M10|stock companion|patched firmware/);
   assert.doesNotMatch(w({ gps: 'l76k', link: 'usb' }), /M10/);
   assert.match(w({ gps: 'm10', link: 'usb' }), /needs the patched firmware/);
   assert.doesNotMatch(w({ gps: 'm10', link: 'uart' }), /needs the patched firmware/);
@@ -152,7 +152,15 @@ test('GPS: the setup guide wires and flashes for the chosen module', () => {
   assert.match(m10, /So does the M10 GPS setup/);
   const l76k = guide({ gps: 'l76k', link: 'usb' });
   assert.match(l76k, /### GPS \(L76K, stock\)/);
+  assert.match(l76k, /sfm-l76k\.uf2/);
   assert.doesNotMatch(l76k, /Radio firmware/);
+  const l76kUart = guide({ gps: 'l76k', link: 'uart' });
+  assert.match(l76kUart, /## 5\. Radio firmware/);
+  assert.match(l76kUart, /provision\/firmware\/t114\/[^`]*sfm-l76k\.uf2/);
+  assert.match(l76kUart, /GPS=l76k \.\/build\.sh/);
+  assert.doesNotMatch(l76kUart, /sfm-portrait/);
+  assert.match(m10, /sfm-portrait\.uf2/);
+  assert.doesNotMatch(m10, /sfm-l76k/);
   const none = guide({ gps: 'none', link: 'usb' });
   assert.doesNotMatch(none, /### GPS/);
   assert.match(none, /## 5\. Channels/);
@@ -174,6 +182,11 @@ test('form layout: home Wi-Fi fields are always visible; only the mobile router 
   assert.match(mobileBlock, /name="mobileSsid"/);
   assert.match(mobileBlock, /name="mobilePass"/);
   assert.doesNotMatch(html.slice(0, html.indexOf('data-show="mobile"')), /name="mobileSsid"/);
+});
+
+test('the firmware files the guide names are really bundled', () => {
+  const dir = require('node:path').join(__dirname, '..', '..', 'provision', 'firmware', 't114');
+  for (const name of Object.values(Stack.FIRMWARE)) assert.ok(require('node:fs').existsSync(require('node:path').join(dir, name)), name);
 });
 
 test('closing app access sets port 0; no bot channel means DM-only', () => {

@@ -1,17 +1,43 @@
 # T114 firmware: patched companion build
 
 Upstream MeshCore companion radio, pinned to `companion-v1.18.0`, env
-`Heltec_t114_companion_radio_ble_usb`, with three patches applied in order:
+`Heltec_t114_companion_radio_ble_usb`, with the patches below applied in order. The GPS patch is one of two
+(see [GPS variants](#gps-variants)):
 
 | Patch | What it adds |
 |---|---|
 | [`ext-batt.patch`](ext-batt.patch) | The Pi pushes its pack voltage to the T114 (`set ext.batt`), below |
 | [`gps-p1-header.patch`](gps-p1-header.patch) | Foxeer M10Q-180 (u-blox M10) GPS on P1-12/13 (`0.09`/`0.10`, `Serial1`, 115200). Forces GPS + Galileo + BeiDou + GLONASS + QZSS with UBX-CFG-VALSET on every GPS reset |
+| [`gps-l76k.patch`](gps-l76k.patch) | Alternative to the M10 patch: keeps the stock L76K GPS pins; only adds the build target the other patches expect |
 | [`pi-uart.patch`](pi-uart.patch) | Companion protocol on a hardware UART to the Pi, in addition to USB and BLE |
 
-Version string: `1.18.0-sfm-gps-uart`, shown by `ver`, device info and the web
-Flash tab. It's 19 characters, the device-info field's limit, so "batt" is
-left out of the name. The ext.batt feature is still in this build.
+The version string is shown by `ver`, device info and the web Flash tab. The device-info
+field holds 19 characters at most.
+
+## GPS variants
+
+`build.sh` builds one of two GPS setups. Everything else is identical.
+
+| `GPS=` | GPS patch | GPS module | Version | Bundled file |
+|---|---|---|---|---|
+| `m10` (default) | `gps-p1-header.patch` | u-blox M10 on the P1 header, 115200 baud | `1.18.0-sfm-portrait` | `...ble_usb-1.18.0-sfm-portrait.uf2` |
+| `l76k` | `gps-l76k.patch` | the stock L76K on the T114's GPS connector (GPIO 37 and 39, enable 21) | `1.18.0-sfm-l76k` | `...ble_usb-1.18.0-sfm-l76k.uf2` |
+
+```bash
+./build.sh              # M10
+GPS=l76k ./build.sh     # L76K
+```
+
+`gps-l76k.patch` adds only the `Heltec_t114_companion_radio_ble_usb` build target (with the GPS page
+enabled) that every later patch builds on. It leaves upstream's GPS pins and L76K setup alone, so the
+GPS behaves as on stock firmware. That means the L76K runs at its power-on defaults: upstream only sends its
+GPS + BeiDou + GLONASS command when `GPS_L76K` is defined, and it isn't defined for the T114.
+
+`flash.sh` and the web Flash tab take `sfm` (M10) or `l76k`.
+
+Status of the L76K build: the patch stack applies to upstream `companion-v1.18.0` and the firmware
+compiles. It has **not** been run on a T114 with an L76K attached yet, so treat it as untested on
+hardware and please report what you see.
 
 ## GPS skew (`gps-skew.patch`)
 

@@ -54,6 +54,10 @@
   });
 
   const GPS_CHOICES = ['l76k', 'm10', 'none'];
+  const FIRMWARE = {
+    m10: 'Heltec_t114_companion_radio_ble_usb-1.18.0-sfm-portrait.uf2',
+    l76k: 'Heltec_t114_companion_radio_ble_usb-1.18.0-sfm-l76k.uf2',
+  };
   const SECRET_FIELDS = ['apPass', 'homePass', 'mobilePass'];
   const MAX_SLOTS = 7;
   const MESHCORE_NAME = /^#[a-z0-9][a-z0-9_-]{0,29}$/;
@@ -106,9 +110,6 @@
     } else if (cfg.link !== 'uart') err('link', 'Pick a radio link.');
 
     if (!GPS_CHOICES.includes(cfg.gps)) err('gps', 'Pick a GPS option.');
-    if (cfg.gps === 'l76k' && cfg.link === 'uart') {
-      warnings.push('The bundled patched firmware (needed for the UART link) is set up for the M10 on the P1 header, not the stock L76K pins. Use the USB link with stock companion firmware, or build your own firmware without gps-p1-header.patch.');
-    }
     if (cfg.gps === 'm10' && cfg.link === 'usb') {
       warnings.push('The M10 needs the patched firmware (P1 header pins, 115200 baud, constellation setup). Stock companion firmware has no support for it.');
     }
@@ -266,7 +267,7 @@
       return `### GPS (u-blox M10)\n\nWire the module to the T114, not the Pi:\n\n${table(['Module', 'T114'], [['TX', 'P1-12 (P0.09, receives)'], ['RX', 'P1-13 (P0.10, transmits)'], ['VCC / GND', '3V3 / GND (check your module\'s supply range)']])}\nThe patched firmware sets this port to 115200 baud and enables GPS, Galileo, BeiDou, GLONASS and QZSS.\n`;
     }
     if (c.gps === 'l76k') {
-      return '### GPS (L76K, stock)\n\nPlug the L76K into the T114\'s GPS connector (GPIO 37 and 39, enable on 21). Stock companion firmware drives it; the bundled patched firmware does not, because it moves the GPS to the P1 header for the M10.\n';
+      return `### GPS (L76K, stock)\n\nPlug the L76K into the T114's GPS connector (GPIO 37 and 39, enable on 21). Stock companion firmware drives it. So does the L76K patched build (\`${FIRMWARE.l76k}\`), which adds the Pi features on top. The M10 build does not, because it moves the GPS to the P1 header.\n`;
     }
     return '';
   }
@@ -283,8 +284,9 @@
     g.push(`## 4. Wiring\n\n${table(['Signal', 'Pi', 'Device'], wiring(c))}${gpsGuide(c) ? '\n' + gpsGuide(c) : ''}`);
     let n = 5;
     if (c.link === 'uart' || c.gps === 'm10') {
-      const why = [c.link === 'uart' && 'The UART link only exists in that build.', c.gps === 'm10' && 'So does the M10 GPS setup.'].filter(Boolean).join(' ');
-      g.push(`## ${n++}. Radio firmware\n\nFlash the patched T114 build from \`provision/firmware/t114/\` (see its README), or rebuild with \`build.sh\`. ${why}\n`);
+      const l76k = c.gps === 'l76k';
+      const why = [c.link === 'uart' && 'The UART link only exists in the patched build.', c.gps === 'm10' && 'So does the M10 GPS setup.', l76k && 'This one keeps the stock L76K GPS pins.'].filter(Boolean).join(' ');
+      g.push(`## ${n++}. Radio firmware\n\nFlash \`provision/firmware/t114/${l76k ? FIRMWARE.l76k : FIRMWARE.m10}\` (the web UI's Flash tab can do it from the Pi), or rebuild it with ${l76k ? '\`GPS=l76k ./build.sh\`' : '\`./build.sh\`'}. ${why}\n`);
     }
     g.push(`## ${n}. Channels\n\nAfter the reboot:\n\n\`\`\`bash\nsudo /opt/mesh-stack/add-channels.sh\n\`\`\`\n\nAdds ${chans.length ? chans.join(', ') : 'nothing (none chosen)'} into the first free slots. ${c.botChannel ? `The bot answers \`${c.cmdPrefix} wx\` on ${c.botChannel}.` : 'The bot answers direct messages only.'} Add the same names in the phone app to see the same traffic.\n`);
     const reach = [`- Web UI: \`http://${c.hostname}.local/\`, or \`http://10.42.0.1/\` when joined to the AP \`${c.apSsid}\``];
@@ -328,5 +330,5 @@ python3 provision/maps/fetch_tiles.py topo "$OUT/topo.mbtiles" "$BBOX"
     return o;
   }
 
-  return { DEFAULTS, PIS, GPS_CHOICES, SECRET_FIELDS, MAX_SLOTS, validate, generate, normalize, tileCount, parseBbox, wiring };
+  return { DEFAULTS, PIS, GPS_CHOICES, FIRMWARE, SECRET_FIELDS, MAX_SLOTS, validate, generate, normalize, tileCount, parseBbox, wiring };
 });

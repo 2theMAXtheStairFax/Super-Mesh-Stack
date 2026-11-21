@@ -384,7 +384,7 @@ from `static/`, so it looks the same offline on the AP). Seven tabs:
 | **Weather** | last cached reading, parsed; **Refresh** sends `<prefix>` (default `wx`) on `wx_channel_idx`; the station's reply is parsed into the reading |
 | **Contacts** | node's contacts + a copy-paste `meshcore://contact/add?…` URI for each (import into the station radio via the phone app) and an import box for URIs coming back |
 | **Config** | edit `config.json` (channels shown by name); bot applies it in ~5 s |
-| **Flash** | shows the radio's firmware; flashes the bundled **patched build** or the **stock** latest release over a **USB cable** (Pi → T114) or **internal SWD wiring** (Pi GPIO → T114 debug pads), with no button presses: stops the bot, flashes, restarts the bot. See [`firmware/t114/`](firmware/t114/README.md#flashing) |
+| **Flash** | shows the radio's firmware; flashes the bundled **patched build** (M10 or L76K GPS) or the **stock** latest release over a **USB cable** (Pi → T114) or **internal SWD wiring** (Pi GPIO → T114 debug pads), with no button presses: stops the bot, flashes, restarts the bot. See [`firmware/t114/`](firmware/t114/README.md#flashing) |
 | **Coverage** | repeaters that heard your pings and surveys, by GPS position: map, table and CSV export |
 | **About** | version, license, source link, and credits for the projects this stack builds on |
 

@@ -2,13 +2,14 @@
 # T114 firmware flasher for the Flash tab, run from the Pi with no PC:
 #   stop the bot -> pick a .uf2 -> flash by the chosen method -> restart the bot.
 #
-# Usage: flash.sh <usb|swd> [sfm|stock]
+# Usage: flash.sh <usb|swd> [sfm|l76k|stock]
 #   usb    USB cable from a Pi port to the T114. A 1200-baud touch drops the T114
 #          into its UF2 bootloader, whose boot drive takes the .uf2.
 #   swd    Internal wiring: Pi GPIO -> T114 SWD pads, driven by openocd. Needs no USB,
 #          and still works when the app won't boot. Writes only the app region, so
 #          the bootloader, contacts and settings stay.
-#   sfm    newest bundled patched build in /opt/mesh-stack/firmware (default)
+#   sfm    newest bundled patched build with the u-blox M10 GPS (default)
+#   l76k   newest bundled patched build with the stock L76K GPS
 #   stock  latest upstream T114 companion release (download)
 #
 # SWD pins (BCM numbers) can be changed in /opt/mesh-stack/swd.env:
@@ -47,13 +48,19 @@ fetch_stock() {
   curl -fsSL "$URL" -o /tmp/t114.uf2 || { echo "[flash] download failed"; exit 1; }
 }
 
+bundled() {   # sfm (M10) or l76k: newest matching patched build
+  ls -t "$FW_DIR"/Heltec_t114_companion_radio_ble_usb-*sfm*.uf2 2>/dev/null |
+    if [ "$1" = l76k ]; then grep l76k; else grep -v l76k; fi | head -1
+}
+
 case "$WHICH" in
-  sfm)   SRC=$(ls -t "$FW_DIR"/Heltec_t114_companion_radio_ble_usb-*sfm*.uf2 2>/dev/null | head -1)
-         [ -n "$SRC" ] || { echo "[flash] no patched build in $FW_DIR"; exit 1; }
+  sfm|l76k)
+         SRC=$(bundled "$WHICH")
+         [ -n "$SRC" ] || { echo "[flash] no $WHICH build in $FW_DIR"; exit 1; }
          echo "[flash] bundled $(basename "$SRC")"
          cp "$SRC" /tmp/t114.uf2 ;;
   stock) fetch_stock ;;
-  *)     echo "[flash] unknown firmware '$WHICH' (sfm|stock)"; exit 1 ;;
+  *)     echo "[flash] unknown firmware '$WHICH' (sfm|l76k|stock)"; exit 1 ;;
 esac
 echo "[flash] got $(stat -c%s /tmp/t114.uf2) bytes"
 

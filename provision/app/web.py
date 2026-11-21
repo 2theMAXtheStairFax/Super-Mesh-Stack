@@ -1103,10 +1103,12 @@ def flash_methods():
     return usb, swd
 
 
-def bundled_fw():
+def bundled_fw(variant="sfm"):
+    """Newest bundled patched build: the M10 one ("sfm") or the L76K one ("l76k")."""
     try:
         names = [n for n in os.listdir(FW_DIR) if n.endswith(".uf2") and "sfm" in n
-                 and n.startswith("Heltec_t114_companion_radio_ble_usb")]
+                 and n.startswith("Heltec_t114_companion_radio_ble_usb")
+                 and (("l76k" in n) == (variant == "l76k"))]
         return max(names, key=lambda n: os.path.getmtime(os.path.join(FW_DIR, n)))
     except (OSError, ValueError):
         return None
@@ -1133,7 +1135,8 @@ def flash_get():
     {opt("swd", "Internal wiring (SWD)", swd, "openocd not installed")}
   </select>
   <select name=which>
-    <option value=sfm>Patched build ({esc(fw or "none bundled")})</option>
+    <option value=sfm>Patched build, M10 GPS ({esc(fw or "none bundled")})</option>
+    <option value=l76k>Patched build, L76K GPS ({esc(bundled_fw("l76k") or "none bundled")})</option>
     <option value=stock>Stock latest MeshCore release</option>
   </select>
   <button class=alt>Flash T114</button>
@@ -1151,7 +1154,7 @@ GPS lock, screen keys). Both stop the bot while flashing. Reload this page to se
 def flash_run():
     method = request.forms.get("method") or "usb"
     which = request.forms.get("which") or "sfm"
-    if method not in ("usb", "swd") or which not in ("sfm", "stock"):
+    if method not in ("usb", "swd") or which not in ("sfm", "l76k", "stock"):
         raise HTTPError(400, "bad target")
     try:
         subprocess.Popen(["sudo", "-n", FLASH_SH, method, which],
