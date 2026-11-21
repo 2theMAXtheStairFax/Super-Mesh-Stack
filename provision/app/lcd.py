@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 from st7735 import ST7735
 import navswitch as nav
 import about
+import colors
 import fox
 import names
 import regions
@@ -56,7 +57,8 @@ ADVERT_HOLD_S = 1.5  # hold this long for a page action (weather requests, surve
 MAP_ZOOMS_KM = [1, 2, 5, 10, 25, 50, 100, 250]   # outer ring radius
 BRIGHT_STEPS = [100, 75, 50, 25, 10]
 ANIM_FRAMES = 9     # frames per page slide / cursor glide (~15 ms each, ~120 ms total)
-HEAD_L, HEAD_R = (200, 20, 20), (245, 200, 0)    # header gradient: red -> yellow
+DEFAULT_HEAD = ((200, 20, 20), (245, 200, 0))    # header gradient: red -> yellow
+HEAD_L, HEAD_R = DEFAULT_HEAD
 UI_PORT = 5055      # meshbot forwards "next/prev/enter/select/wake" here to the T114 ("ui ..." command)
 EMOJI_FONT = '/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf'
 BATTERY, PLUG = '\U0001F50B', '\U0001F50C'    # dashboard battery row: on battery / charging
@@ -277,7 +279,17 @@ def save_settings():
         json.dump(S, f)
 
 # ---------------------------------------------------------------- drawing
+def refresh_theme():
+    """Header gradient from the Config tab colors (or the environment); built-in red -> yellow if unset."""
+    global HEAD_L, HEAD_R
+    c = read_json(CONFIG_FILE)
+    main = colors.resolve(c.get('color_main'), os.environ.get('SMS_COLOR_MAIN'))
+    accent = colors.resolve(c.get('color_accent'), os.environ.get('SMS_COLOR_ACCENT'))
+    HEAD_L = colors.to_rgb(main) if main else DEFAULT_HEAD[0]
+    HEAD_R = colors.to_rgb(accent) if accent else DEFAULT_HEAD[1]
+
 def frame(w, h, title):
+    refresh_theme()
     img = Image.new('RGB', (w, h), BG)
     d = ImageDraw.Draw(img)
     for x in range(w):
@@ -294,7 +306,7 @@ def paint_title(img, d, title):
     room = int(w - 4 - d.textlength(clock, font=F_HEAD) - 8)
     tw = int(d.textlength(title, font=F_HEAD)) + 1
     if tw <= room:
-        d.text((4, 1), title, font=F_HEAD, fill=(255, 255, 255))
+        d.text((4, 1), title, font=F_HEAD, fill=colors.on_rgb(HEAD_L))
     else:
         if title != _mq['title']:
             _mq.update(title=title, since=time.monotonic())
@@ -302,11 +314,11 @@ def paint_title(img, d, title):
         t = (time.monotonic() - _mq['since']) % (2 * MARQUEE_PAUSE + over / MARQUEE_SPEED)
         off = int(min(over, max(0.0, t - MARQUEE_PAUSE) * MARQUEE_SPEED))
         strip = Image.new('RGBA', (tw, 15), (0, 0, 0, 0))
-        ImageDraw.Draw(strip).text((0, 1), title, font=F_HEAD, fill=(255, 255, 255))
+        ImageDraw.Draw(strip).text((0, 1), title, font=F_HEAD, fill=colors.on_rgb(HEAD_L))
         part = strip.crop((off, 0, off + room, 15))
         img.paste(part, (4, 0), part)
         _mq['active'] = True
-    d.text((w - 4, 1), clock, font=F_HEAD, fill=(0, 0, 0), anchor='ra')
+    d.text((w - 4, 1), clock, font=F_HEAD, fill=colors.on_rgb(HEAD_R), anchor='ra')
 
 def repaint_header(img):
     """Next scroll step of the current title on a copy of the last full frame."""

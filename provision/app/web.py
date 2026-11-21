@@ -22,6 +22,7 @@ from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 from bottle import Bottle, request, response, redirect, static_file, HTTPError
 
 import about
+import colors
 import names
 import regions
 
@@ -59,6 +60,12 @@ def status():
 def cfg():
     s = status().get("cfg") or {}
     return {**s, **_json(CONFIG_PATH, {})}
+
+
+def theme_colors():
+    c = cfg()
+    return (colors.resolve(c.get("color_main"), os.environ.get("SMS_COLOR_MAIN")),
+            colors.resolve(c.get("color_accent"), os.environ.get("SMS_COLOR_ACCENT")))
 
 
 def site_title():
@@ -272,7 +279,7 @@ TABS = [("/", "Messages"), ("/weather", "Weather"), ("/contacts", "Contacts"),
 CSS = """
 @font-face{font-family:'Oswald';font-weight:300 700;font-display:swap;src:url(/static/oswald.woff2) format('woff2')}
 @font-face{font-family:'Bungee Hairline';font-weight:400;font-display:swap;src:url(/static/bungee-hairline.woff2) format('woff2')}
-:root{--red:#e00;--yellow:#ffcc00;--bg:#0a0a0a;--surface:#161616;--surface-border:#2a2a2a;
+:root{--red:#e00;--yellow:#ffcc00;--on-red:#fff;--bg:#0a0a0a;--surface:#161616;--surface-border:#2a2a2a;
   --text:#f2f2f2;--text-dim:#9c9c9c;--red-ink:#ff3b3b;--yellow-ink:#ffcc00;--field:#000}
 @media (prefers-color-scheme:light){:root{--bg:#fff;--surface:#f4f4f4;--surface-border:#e2e2e2;
   --text:#161616;--text-dim:#555;--red-ink:#d00000;--yellow-ink:#9a6f00;--field:#fff}}
@@ -309,8 +316,8 @@ input[type=text],input[type=number],select,textarea{font:inherit;padding:9px 12p
 input:focus,select:focus,textarea:focus{outline:2px solid var(--yellow-ink);outline-offset:1px}
 input[type=text]{flex:1;min-width:180px}
 button{font:700 15px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:10px 24px;border-radius:999px;
-  border:0;background:var(--red);color:#fff;cursor:pointer;transition:background-color .2s,box-shadow .2s}
-button:hover{background:#ff1a1a;box-shadow:0 0 0 3px rgba(255,204,0,.35)}
+  border:0;background:var(--red);color:var(--on-red);cursor:pointer;transition:background-color .2s,box-shadow .2s}
+button:hover{filter:brightness(1.12);box-shadow:0 0 0 3px color-mix(in srgb,var(--yellow) 35%,transparent)}
 button:focus-visible{outline:2px solid var(--yellow-ink);outline-offset:3px}
 button.alt{background:none;color:var(--text);border:1px solid var(--surface-border)}
 button.alt:hover{border-color:var(--text-dim);box-shadow:none}
@@ -403,7 +410,7 @@ def page(active, body, wide=False):
     return f"""<!doctype html><html><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>{esc(site_title())} &middot; {heading}</title><link rel=icon href="/static/favicon.ico">
-<style>{CSS}</style></head><body>
+<style>{CSS}{colors.theme_css(*theme_colors())}</style></head><body>
 <header><img class=logo src="/static/logo.png" alt=""><span class=title>{esc(site_title())}</span><nav>{nav}</nav></header>
 <main class="{'wide' if wide else ''}"><h1 class=page>{heading}</h1><p class=sub>{bar}</p>{body}</main></body></html>"""
 
@@ -994,10 +1001,14 @@ def config_get():
         return "".join(
             f'<option value="{i}"{" selected" if i == int(val) else ""}>{esc(n)}</option>'
             for i, n in ({**ch, -1: "(none / DMs only)"}).items())
+    main, accent = theme_colors()
+    main_color, accent_color = main or colors.DEFAULT_MAIN, accent or colors.DEFAULT_ACCENT
     return page("/config", f"""
 <form method=post action=/config>
 <table class=cfg>
 <tr><td>Header title (screen and web)</td><td><input type=text name=title maxlength={names.TITLE_MAX} placeholder="{esc(names.DEFAULT_TITLE)}" value="{esc(c.get("title", ""))}"></td></tr>
+<tr><td>Main color</td><td><input type=color name=color_main value="{main_color}"></td></tr>
+<tr><td>Accent color</td><td><input type=color name=color_accent value="{accent_color}"></td></tr>
 <tr><td>Bot reply channel</td><td><select name=bot_channel_idx>{sel("b", c.get("bot_channel_idx", -1))}</select></td></tr>
 <tr><td>Command prefix</td><td><input type=text name=cmd_prefix value="{esc(c.get("cmd_prefix", "wx"))}"></td></tr>
 <tr><td>Default send channel</td><td><select name=web_send_default_idx>{sel("d", c.get("web_send_default_idx", 0))}</select></td></tr>
@@ -1017,7 +1028,7 @@ def config_get():
 <tr><td>Fox broadcast every (sec)</td><td><input type=number name=fox_auto_sec min=60 value="{int(c.get("fox_auto_sec", 120))}"></td></tr>
 <tr><td>Fox battery reserve (% counted as empty)</td><td><input type=number name=fox_reserve_pct min=0 max=90 value="{int(c.get("fox_reserve_pct", 20))}"></td></tr>
 </table>
-<form class=row><button>Save</button></form>
+<form class=row><button>Save</button> <button class=alt name=reset_colors value=1>Reset colors</button></form>
 </form>
 <form class=row method=post action=/advert/position>
 <span>Position in adverts: <b>{"unknown" if status().get("adv_loc") is None else "on" if status().get("adv_loc") else "off"}</b></span>
@@ -1039,6 +1050,13 @@ def config_post():
     title = (f.getunicode("title") or "").strip()
     if (err := names.check_title(title)):
         raise HTTPError(400, err)
+    picked = {}
+    for key, default in (("color_main", colors.DEFAULT_MAIN), ("color_accent", colors.DEFAULT_ACCENT)):
+        raw = (f.get(key) or "").strip()
+        value = colors.parse(raw)
+        if raw and not value:
+            raise HTTPError(400, "Colors are #rrggbb")
+        picked[key] = "" if f.get("reset_colors") or value in (None, default) else value
     scope = regions.normalize(f.get("region_scope", ""))
     if not regions.valid(scope):
         raise HTTPError(400, f"Region scope: lowercase letters, digits and hyphens, up to {regions.MAX_LEN} characters")
@@ -1046,6 +1064,7 @@ def config_post():
         raise HTTPError(400, "Pick a region scope before turning it on")
     new = {**_json(CONFIG_PATH, {}),      # keep settings this form doesn't show
         "title": title,
+        **picked,
         "bot_channel_idx": int(f.get("bot_channel_idx", -1)),
         "cmd_prefix": (f.get("cmd_prefix", "wx") or "wx").strip().lower(),
         "web_send_default_idx": int(f.get("web_send_default_idx", 0)),

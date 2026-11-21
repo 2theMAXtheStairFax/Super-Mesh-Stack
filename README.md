@@ -55,7 +55,7 @@ The bundle's `SETUP.md` repeats these steps with your hostname, wiring and ports
 | Channels, bot channel, command word | Channel list and the indexes the bot answers on |
 | App access and allowed networks | Multiplexer port and CIDR allow-list for the MeshCore app |
 | Coverage log, aerial telemetry, flood scope, weather node | Bot features and defaults |
-| Header title, time zone, hostname, SD hardening, mDNS | System settings; the title appears in the screen header bar and the web UI |
+| Header title, main and accent colors, time zone, hostname, SD hardening, mDNS | System settings; the title and colors apply to the screen header and the web UI |
 | Map area | `tiles.sh` for offline maps, with a tile-count estimate |
 
 Settings are written to `/etc/mesh-stack/stack.env`, which every service reads. Runtime options can be changed later from the web UI's Config tab.

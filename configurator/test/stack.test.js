@@ -71,6 +71,15 @@ test('app access admits the local network by default, and can be restricted', ()
   assert.equal(env(Stack.generate(base({ appLan: false }))).SMS_MUX_LAN, '0');
 });
 
+test('theme colors: defaults emit nothing, custom picks are normalised and validated', () => {
+  assert.equal(env(Stack.generate(base())).SMS_COLOR_MAIN, '');
+  const e = env(Stack.generate(base({ colorMain: '#3366CC', colorAccent: '#FFFFFF' })));
+  assert.equal(e.SMS_COLOR_MAIN, '#3366cc');
+  assert.equal(e.SMS_COLOR_ACCENT, '#ffffff');
+  assert.ok(Stack.validate(base({ colorMain: 'red' })).errors.colorMain);
+  assert.ok(Stack.validate(base({ colorAccent: '#12345' })).errors.colorAccent);
+});
+
 test('closing app access sets port 0; no bot channel means DM-only', () => {
   const e = env(Stack.generate(base({ appAccess: false, botChannel: '' })));
   assert.equal(e.SMS_MUX_PORT, '0');

@@ -89,6 +89,8 @@
     <fieldset>
       <legend>System</legend>
       <label>Header title <input name="title" maxlength="24"><small>Shown in the screen header bar and the web UI. Long titles scroll on the screen.</small></label>
+      <label>Main color <input type="color" name="colorMain"></label>
+      <label>Accent color <input type="color" name="colorAccent"><small>Used for the screen header, buttons and highlights. Text colors adjust to stay readable. Both can be changed later in the Config tab.</small></label>
       <label>Hostname <input name="hostname"></label>
       <label>Time zone <input name="tz" list="tzlist"><datalist id="tzlist"></datalist></label>
       <label class="check"><input type="checkbox" name="harden"> SD-card hardening (zram, RAM-only logs, noatime)</label>

@@ -16,6 +16,8 @@
     hostname: 'mesh-stack',
     tz: 'UTC',
     title: 'Mesh Stack',
+    colorMain: '#ee0000',
+    colorAccent: '#ffcc00',
     link: 'uart',
     lcd: true,
     argon: false,
@@ -85,6 +87,7 @@
     if (!PIS[cfg.pi]) err('pi', 'Pick a board.');
     else if (!PIS[cfg.pi].tested) warnings.push(`${PIS[cfg.pi].label} is untested; the 3B is what this stack was built on.`);
 
+    for (const k of ['colorMain', 'colorAccent']) if (!/^#[0-9a-f]{6}$/i.test(cfg[k])) err(k, 'Pick a color.');
     const title = String(cfg.title).trim();
     if (!title || title.length > 24 || bad(title)) err('title', '1 to 24 characters; no quotes or backslashes.');
 
@@ -163,6 +166,8 @@
     c.regionScope = String(c.regionScope || '').trim().toLowerCase().replace(/^#/, '');
     c.cmdPrefix = String(c.cmdPrefix).trim().toLowerCase();
     c.title = String(c.title).trim();
+    c.colorMain = String(c.colorMain).toLowerCase();
+    c.colorAccent = String(c.colorAccent).toLowerCase();
     return c;
   }
 
@@ -175,6 +180,8 @@
     const kv = [
       ['SMS_TZ', c.tz],
       ['SMS_TITLE', c.title],
+      ['SMS_COLOR_MAIN', c.colorMain === DEFAULTS.colorMain ? '' : c.colorMain],
+      ['SMS_COLOR_ACCENT', c.colorAccent === DEFAULTS.colorAccent ? '' : c.colorAccent],
       ['SMS_SERIAL', c.link === 'uart' ? '/dev/serial0' : '/dev/ttyACM0'],
       ['SMS_BOT_CHANNEL_IDX', botIdx],
       ['SMS_WX_CHANNEL_IDX', botIdx],
