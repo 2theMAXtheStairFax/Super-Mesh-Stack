@@ -55,7 +55,9 @@
   function toggles(cfg) {
     form.querySelectorAll('[data-show]').forEach((n) => { n.hidden = !cfg[n.dataset.show]; });
     form.querySelectorAll('[data-show-field]').forEach((n) => { n.hidden = !cfg[n.dataset.showField]; });
+    form.querySelectorAll('[data-show-any]').forEach((n) => { n.hidden = !n.dataset.showAny.split(',').some((k) => cfg[k]); });
     el('gpioShutdown').disabled = cfg.argon;
+    el('wardrive').disabled = cfg.gps === 'none';
     if (cfg.argon) el('gpioShutdown').checked = false;
   }
 
@@ -78,7 +80,7 @@
     $('download').disabled = !v.ok;
     const files = v.ok ? Stack.generate(cfg) : [];
     renderTabs(files);
-    try { const { apPass, mobilePass, ...safe } = cfg; localStorage.setItem(KEY, JSON.stringify(safe)); } catch (_) { /* private mode */ }
+    try { localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(Object.entries(cfg).filter(([k]) => !Stack.SECRET_FIELDS.includes(k))))); } catch (_) { /* private mode */ }
     return files;
   }
 

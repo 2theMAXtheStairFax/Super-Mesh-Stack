@@ -53,7 +53,8 @@ The bundle's `SETUP.md` repeats these steps with your hostname, wiring and ports
 |---|---|
 | Radio link (UART or USB) | Serial device, boot overlays and the firmware you need |
 | Screen and joystick, Argon HAT, battery monitor | I&sup2;C and SPI overlays, enabled services, packages and the wiring table |
-| Access point and Wi-Fi networks | NetworkManager profiles and the rescue access point |
+| Home Wi-Fi, optional mobile router, Wi-Fi country, access point | NetworkManager profiles created at setup, and the rescue access point |
+| GPS (L76K stock, u-blox M10, or none) | Wiring table, firmware guidance and whether the coverage log is enabled |
 | Channels, bot channel, command word | Channel list and the indexes the bot answers on |
 | App access and allowed networks | Multiplexer port and CIDR allow-list for the MeshCore app |
 | Coverage log, aerial telemetry, flood scope, weather node | Bot features and defaults |
@@ -71,7 +72,7 @@ Developed and tested on a Raspberry Pi 3B. The Pi 4B and Zero 2 W are selectable
 | Radio | Heltec T114 (nRF52840, SX1262). The UART link requires the patched firmware in [`provision/firmware/t114/`](provision/firmware/t114/). USB works with stock companion firmware, with some features unavailable |
 | Display | 0.96&Prime; 80&times;160 ST7735S on SPI0, with a SparkFun Qwiic navigation switch |
 | Power | INA219 or Waveshare UPS HAT (D); Argon Fan HAT optional |
-| GPS | u-blox M10 on the T114 P1 header (patched firmware) |
+| GPS | Optional. L76K (stock T114, stock firmware) or u-blox M10 on the P1 header (patched firmware) |
 | Case | Parametric printable case in [`hardware/t114-case/`](hardware/t114-case/) |
 
 See [`docs/hardware-notes.md`](docs/hardware-notes.md) for build notes and [`docs/features.md`](docs/features.md) for the full feature reference.

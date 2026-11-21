@@ -80,6 +80,92 @@ test('theme colors: defaults emit nothing, custom picks are normalised and valid
   assert.ok(Stack.validate(base({ colorAccent: '#12345' })).errors.colorAccent);
 });
 
+test('home network: SSID and password are saved for setup to create a profile', () => {
+  const files = Stack.generate(base({ homeSsid: 'My Home', homePass: 'correct-horse-1', wifiCountry: 'us' }));
+  const e = env(files);
+  assert.equal(e.STACK_HOME_SSID, 'My Home');
+  assert.equal(e.STACK_HOME_PSK, 'correct-horse-1');
+  assert.equal(e.SMS_HOME_CON, 'sms-home');
+  assert.equal(e.STACK_WIFI_COUNTRY, 'US');
+  assert.match(files.find((f) => f.path === 'SETUP.md').content, /Wireless LAN: My Home/);
+});
+
+test('no home network: the Imager profile name is kept and no profile is requested', () => {
+  const e = env(Stack.generate(base({ homePass: 'ignored-without-ssid' })));
+  assert.equal(e.SMS_HOME_CON, 'preconfigured');
+  assert.equal(e.STACK_HOME_SSID, '');
+  assert.equal(e.STACK_HOME_PSK, '');
+});
+
+test('home network validation: password and country are required, characters are checked', () => {
+  const v = (o) => Stack.validate(base({ wifiCountry: 'US', ...o }));
+  assert.ok(v({ homeSsid: 'Home' }).errors.homePass);
+  assert.ok(v({ homeSsid: 'Home', homePass: 'short' }).errors.homePass);
+  assert.ok(v({ homeSsid: "it's", homePass: 'longenough1' }).errors.homeSsid);
+  assert.ok(v({ homeSsid: 'Home', homePass: "pass'word12" }).errors.homePass);
+  assert.ok(v({ homeSsid: 'x'.repeat(33), homePass: 'longenough1' }).errors.homeSsid);
+  assert.equal(v({ homeSsid: 'Home', homePass: 'longenough1' }).ok, true);
+  assert.ok(Stack.validate(base({ homeSsid: 'Home', homePass: 'longenough1' })).errors.wifiCountry);
+  assert.ok(Stack.validate(base({ homeSsid: 'Home', homePass: 'longenough1', wifiCountry: 'USA' })).errors.wifiCountry);
+  assert.equal(Stack.validate(base()).ok, true);
+});
+
+test('mobile router is opt-in: its fields are ignored until the box is ticked', () => {
+  const filled = { mobileSsid: 'Phone', mobilePass: 'longenough1', wifiCountry: 'US' };
+  const off = env(Stack.generate(base(filled)));
+  assert.equal(off.STACK_MOBILE_SSID, '');
+  assert.equal(off.STACK_MOBILE_PSK, '');
+  const on = env(Stack.generate(base({ ...filled, mobile: true })));
+  assert.equal(on.STACK_MOBILE_SSID, 'Phone');
+  assert.equal(on.STACK_MOBILE_PSK, 'longenough1');
+  assert.ok(Stack.validate(base({ mobile: true, wifiCountry: 'US' })).errors.mobileSsid);
+  assert.ok(Stack.validate(base({ mobile: true, mobileSsid: 'Phone', wifiCountry: 'US' })).errors.mobilePass);
+  assert.equal(Stack.validate(base({ mobileSsid: '' })).ok, true);
+});
+
+test('Wi-Fi passwords never reach stack.json', () => {
+  const json = Stack.generate(base({ homeSsid: 'Home', homePass: 'sekrit-home-1', wifiCountry: 'US' })).find((f) => f.path === 'stack.json').content;
+  assert.doesNotMatch(json, /sekrit/);
+  assert.match(json, /"homeSsid": "Home"/);
+});
+
+test('GPS: only the three known options validate', () => {
+  for (const gps of ['l76k', 'm10', 'none']) assert.equal(Stack.validate(base({ gps })).ok, true, gps);
+  assert.ok(Stack.validate(base({ gps: 'neo6m' })).errors.gps);
+});
+
+test('GPS: warnings match what the bundled firmware can actually do', () => {
+  const w = (o) => Stack.validate(base(o)).warnings.join(' ');
+  assert.match(w({ gps: 'l76k', link: 'uart' }), /set up for the M10/);
+  assert.doesNotMatch(w({ gps: 'l76k', link: 'usb' }), /M10/);
+  assert.match(w({ gps: 'm10', link: 'usb' }), /needs the patched firmware/);
+  assert.doesNotMatch(w({ gps: 'm10', link: 'uart' }), /needs the patched firmware/);
+  assert.doesNotMatch(w({ gps: 'none', link: 'uart' }), /M10/);
+});
+
+test('GPS: the setup guide wires and flashes for the chosen module', () => {
+  const guide = (o) => Stack.generate(base(o)).find((f) => f.path === 'SETUP.md').content;
+  const m10 = guide({ gps: 'm10', link: 'usb' });
+  assert.match(m10, /### GPS \(u-blox M10\)/);
+  assert.match(m10, /P1-12 \(P0\.09/);
+  assert.match(m10, /## 5\. Radio firmware/);
+  assert.match(m10, /So does the M10 GPS setup/);
+  const l76k = guide({ gps: 'l76k', link: 'usb' });
+  assert.match(l76k, /### GPS \(L76K, stock\)/);
+  assert.doesNotMatch(l76k, /Radio firmware/);
+  const none = guide({ gps: 'none', link: 'usb' });
+  assert.doesNotMatch(none, /### GPS/);
+  assert.match(none, /## 5\. Channels/);
+  assert.match(guide({ gps: 'none', link: 'uart' }), /## 6\. Channels/);
+});
+
+test('GPS: without one the coverage log is switched off, since it has no position to log', () => {
+  assert.equal(env(Stack.generate(base({ gps: 'none', wardrive: true }))).SMS_WARDRIVE_LOG, '0');
+  assert.equal(env(Stack.generate(base({ gps: 'm10', wardrive: true }))).SMS_WARDRIVE_LOG, '1');
+  assert.equal(env(Stack.generate(base({ gps: 'm10', wardrive: false }))).SMS_WARDRIVE_LOG, '0');
+  assert.equal(env(Stack.generate(base({ gps: 'l76k' }))).STACK_GPS, 'l76k');
+});
+
 test('closing app access sets port 0; no bot channel means DM-only', () => {
   const e = env(Stack.generate(base({ appAccess: false, botChannel: '' })));
   assert.equal(e.SMS_MUX_PORT, '0');
@@ -95,7 +181,10 @@ test('boot config follows the hardware', () => {
 });
 
 test('secrets stay out of everything but stack.env', () => {
-  const files = Stack.generate(base({ apPass: 'sekrit-pass-1', mobileSsid: 'Phone', mobilePass: 'sekrit-pass-2' }));
+  const files = Stack.generate(base({
+    apPass: 'sekrit-pass-1', mobile: true, mobileSsid: 'Phone', mobilePass: 'sekrit-pass-2',
+    homeSsid: 'Home', homePass: 'sekrit-pass-3', wifiCountry: 'US',
+  }));
   for (const f of files) {
     const has = /sekrit-pass/.test(f.content);
     assert.equal(has, f.path === 'provision/stack.env', f.path);

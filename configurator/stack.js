@@ -20,6 +20,7 @@
     colorAccent: '#ffcc00',
     link: 'uart',
     lcd: true,
+    gps: 'none',
     argon: false,
     gpioShutdown: false,
     wakeWire: false,
@@ -28,7 +29,10 @@
     cells: 1,
     apSsid: 'mesh-stack',
     apPass: '',
-    homeCon: 'preconfigured',
+    wifiCountry: '',
+    homeSsid: '',
+    homePass: '',
+    mobile: false,
     mobileSsid: '',
     mobilePass: '',
     appAccess: true,
@@ -37,7 +41,7 @@
     appAllow: '',
     channels: '#bot\n#testing',
     botChannel: '#bot',
-    cmdPrefix: 'wx',
+    cmdPrefix: 'mesh',
     wxNode: '',
     idlePoweroff: 0,
     wardrive: true,
@@ -49,7 +53,8 @@
     platformio: false,
   });
 
-  const SECRET_FIELDS = ['apPass', 'mobilePass'];
+  const GPS_CHOICES = ['l76k', 'm10', 'none'];
+  const SECRET_FIELDS = ['apPass', 'homePass', 'mobilePass'];
   const MAX_SLOTS = 7;
   const MESHCORE_NAME = /^#[a-z0-9][a-z0-9_-]{0,29}$/;
 
@@ -100,6 +105,13 @@
       warnings.push('USB link: stock companion firmware works, but the joystick radio-screen control, GPS fix, GPS skew, Pi battery feed and brightness need the patched build.');
     } else if (cfg.link !== 'uart') err('link', 'Pick a radio link.');
 
+    if (!GPS_CHOICES.includes(cfg.gps)) err('gps', 'Pick a GPS option.');
+    if (cfg.gps === 'l76k' && cfg.link === 'uart') {
+      warnings.push('The bundled patched firmware (needed for the UART link) is set up for the M10 on the P1 header, not the stock L76K pins. Use the USB link with stock companion firmware, or build your own firmware without gps-p1-header.patch.');
+    }
+    if (cfg.gps === 'm10' && cfg.link === 'usb') {
+      warnings.push('The M10 needs the patched firmware (P1 header pins, 115200 baud, constellation setup). Stock companion firmware has no support for it.');
+    }
     if (cfg.argon && cfg.gpioShutdown) err('gpioShutdown', 'gpio-shutdown collides with the Argon power-button handler on GPIO3/4.');
     if (cfg.argon && cfg.wakeWire) warnings.push('Wake pulses on GPIO3 share the I²C clock with the Argon MCU; a pulse while the Pi runs glitches one frame.');
 
@@ -113,12 +125,15 @@
       if (cfg.apPass.length < 8 || cfg.apPass.length > 63) err('apPass', 'WPA2 passphrase is 8 to 63 characters.');
       else if (bad(cfg.apPass) || /[^\x20-\x7e]/.test(cfg.apPass)) err('apPass', 'Printable ASCII only; no quotes or backslashes.');
     }
-    if (!/^[A-Za-z0-9_. -]{1,40}$/.test(cfg.homeCon)) err('homeCon', 'NetworkManager connection name: letters, digits, space, . _ -');
-    if (cfg.mobileSsid) {
-      if (utf8Len(cfg.mobileSsid) > 32 || bad(cfg.mobileSsid)) err('mobileSsid', '1 to 32 bytes; no quotes or backslashes.');
-      if (cfg.mobilePass.length < 8 || cfg.mobilePass.length > 63 || bad(cfg.mobilePass)) err('mobilePass', '8 to 63 printable characters; no quotes or backslashes.');
-      warnings.push('Pi 3B/Zero 2 W cannot join WPA2/WPA3-mixed networks; set 2.4 GHz to WPA2-PSK only.');
-    }
+    const network = (ssidKey, passKey) => {
+      const ssid = cfg[ssidKey], pass = cfg[passKey];
+      if (!ssid || utf8Len(ssid) > 32 || bad(ssid)) err(ssidKey, '1 to 32 bytes; no quotes, backslashes or control characters.');
+      if (pass.length < 8 || pass.length > 63 || bad(pass) || /[^\x20-\x7e]/.test(pass)) err(passKey, '8 to 63 printable ASCII characters; no quotes or backslashes.');
+    };
+    if (cfg.homeSsid) network('homeSsid', 'homePass');
+    if (cfg.mobile) network('mobileSsid', 'mobilePass');
+    if ((cfg.homeSsid || cfg.mobile) && !/^[A-Za-z]{2}$/.test(cfg.wifiCountry)) err('wifiCountry', 'Two-letter country code, e.g. US. Without it the Wi-Fi radio stays disabled.');
+    if (cfg.homeSsid || cfg.mobile) warnings.push('The Pi 3B and Zero 2 W are 2.4 GHz only and cannot join WPA2/WPA3-mixed networks; use WPA2-PSK.');
 
     if (cfg.appAccess) {
       const port = +cfg.appPort;
@@ -167,6 +182,8 @@
     c.cmdPrefix = String(c.cmdPrefix).trim().toLowerCase();
     c.title = String(c.title).trim();
     c.colorMain = String(c.colorMain).toLowerCase();
+    c.wifiCountry = String(c.wifiCountry || '').toUpperCase();
+    c.wifiCountry = String(c.wifiCountry || '').toUpperCase();
     c.colorAccent = String(c.colorAccent).toLowerCase();
     return c;
   }
@@ -193,20 +210,22 @@
       ['SMS_MUX_ALLOW', allow],
       ['SMS_AP_SSID', c.apSsid],
       ['SMS_AP_PASS', c.apPass],
-      ['SMS_HOME_CON', c.homeCon],
+      ['SMS_HOME_CON', c.homeSsid ? 'sms-home' : 'preconfigured'],
       ['SMS_REGION_SCOPE_ON', c.regionScope ? 1 : 0],
       ['SMS_REGION_SCOPE', c.regionScope],
-      ['SMS_WARDRIVE_LOG', c.wardrive ? 1 : 0],
+      ['SMS_WARDRIVE_LOG', c.wardrive && c.gps !== 'none' ? 1 : 0],
     ];
     if (c.power) {
       kv.push(['SMS_INA219_ADDR', c.inaAddr], ['SMS_BATT_CELLS', c.cells],
         ['SMS_BATT_WARN_V', v(3.6)], ['SMS_BATT_CRIT_V', v(3.4)], ['SMS_BATT_FLOOR_V', v(3.3)]);
     }
     const flags = [
-      ['STACK_UART', c.link === 'uart' ? 1 : 0], ['STACK_LCD', +c.lcd], ['STACK_POWER', +c.power],
+      ['STACK_UART', c.link === 'uart' ? 1 : 0], ['STACK_GPS', c.gps], ['STACK_LCD', +c.lcd], ['STACK_POWER', +c.power],
       ['STACK_FOX', +c.fox], ['STACK_ARGON', +c.argon], ['STACK_HARDEN', +c.harden],
       ['STACK_AVAHI', +c.avahi], ['STACK_PLATFORMIO', +c.platformio],
-      ['STACK_MOBILE_SSID', c.mobileSsid], ['STACK_MOBILE_PSK', c.mobilePass],
+      ['STACK_WIFI_COUNTRY', c.wifiCountry],
+      ['STACK_HOME_SSID', c.homeSsid], ['STACK_HOME_PSK', c.homeSsid ? c.homePass : ''],
+      ['STACK_MOBILE_SSID', c.mobile ? c.mobileSsid : ''], ['STACK_MOBILE_PSK', c.mobile ? c.mobilePass : ''],
     ];
     const out = (rows) => rows.map(([k, val]) => `${k}=${q(val)}`).join('\n');
     return `# Super Mesh Stack - generated by the configurator. Contains secrets: do not commit.\n${out(kv)}\n\n# installer switches (read by setup.sh only)\n${out(flags)}\n`;
@@ -242,18 +261,32 @@
     return rows;
   }
 
+  function gpsGuide(c) {
+    if (c.gps === 'm10') {
+      return `### GPS (u-blox M10)\n\nWire the module to the T114, not the Pi:\n\n${table(['Module', 'T114'], [['TX', 'P1-12 (P0.09, receives)'], ['RX', 'P1-13 (P0.10, transmits)'], ['VCC / GND', '3V3 / GND (check your module\'s supply range)']])}\nThe patched firmware sets this port to 115200 baud and enables GPS, Galileo, BeiDou, GLONASS and QZSS.\n`;
+    }
+    if (c.gps === 'l76k') {
+      return '### GPS (L76K, stock)\n\nPlug the L76K into the T114\'s GPS connector (GPIO 37 and 39, enable on 21). Stock companion firmware drives it; the bundled patched firmware does not, because it moves the GPS to the P1 header for the M10.\n';
+    }
+    return '';
+  }
+
   const table = (head, rows) => `| ${head.join(' | ')} |\n|${head.map(() => '---').join('|')}|\n${rows.map((r) => `| ${r.join(' | ')} |`).join('\n')}\n`;
 
   function setupGuide(c) {
     const chans = lines(c.channels);
     const g = [];
     g.push(`# Your Super Mesh Stack setup\n\nBoard: ${PIS[c.pi].label}. Radio link: ${c.link === 'uart' ? 'UART (patched firmware)' : 'USB'}.\n`);
-    g.push(`## 1. Flash the SD card\n\nRaspberry Pi Imager, Raspberry Pi OS Lite 64-bit (Bookworm). Under Edit Settings:\n\n- Hostname: \`${c.hostname}\`\n- Username and password: your choice\n- Wireless LAN: your network (2.4 GHz) and the country\n- Locale: \`${c.tz}\`\n- SSH: public-key only, paste your key\n`);
+    g.push(`## 1. Flash the SD card\n\nRaspberry Pi Imager, Raspberry Pi OS Lite 64-bit (Bookworm). Under Edit Settings:\n\n- Hostname: \`${c.hostname}\`\n- Username and password: your choice\n- Wireless LAN: ${c.homeSsid ? c.homeSsid + ' (with its password) and country ' + c.wifiCountry + '; set it here too so you can SSH in the first time, then setup saves it on the node' : 'your 2.4 GHz network and country, or plug in Ethernet'}\n- Locale: \`${c.tz}\`\n- SSH: public-key only, paste your key\n`);
     g.push('## 2. Boot partition\n\nAppend `config.txt.append` from this bundle to `config.txt` on the `bootfs` partition, eject, boot the Pi.\n');
     g.push('## 3. Install\n\nOn the Pi:\n\n```bash\ngit clone https://github.com/2theMAXtheStairFax/Super-Mesh-Stack.git ~/super-mesh-stack\n```\n\nCopy `provision/stack.env` and `provision/channels.txt` from this bundle into `~/super-mesh-stack/provision/`, then:\n\n```bash\ncd ~/super-mesh-stack/provision && ./setup.sh && sudo reboot\n```\n\n`stack.env` holds your passphrases. It is gitignored; keep it out of repos and screenshots.\n');
-    g.push(`## 4. Wiring\n\n${table(['Signal', 'Pi', 'Device'], wiring(c))}`);
-    if (c.link === 'uart') g.push('## 5. Radio firmware\n\nFlash the patched T114 build from `provision/firmware/t114/` (see its README), or rebuild with `build.sh`. The UART link only exists in that build.\n');
-    g.push(`## ${c.link === 'uart' ? 6 : 5}. Channels\n\nAfter the reboot:\n\n\`\`\`bash\nsudo /opt/mesh-stack/add-channels.sh\n\`\`\`\n\nAdds ${chans.length ? chans.join(', ') : 'nothing (none chosen)'} into the first free slots. ${c.botChannel ? `The bot answers \`${c.cmdPrefix} wx\` on ${c.botChannel}.` : 'The bot answers direct messages only.'} Add the same names in the phone app to see the same traffic.\n`);
+    g.push(`## 4. Wiring\n\n${table(['Signal', 'Pi', 'Device'], wiring(c))}${gpsGuide(c) ? '\n' + gpsGuide(c) : ''}`);
+    let n = 5;
+    if (c.link === 'uart' || c.gps === 'm10') {
+      const why = [c.link === 'uart' && 'The UART link only exists in that build.', c.gps === 'm10' && 'So does the M10 GPS setup.'].filter(Boolean).join(' ');
+      g.push(`## ${n++}. Radio firmware\n\nFlash the patched T114 build from \`provision/firmware/t114/\` (see its README), or rebuild with \`build.sh\`. ${why}\n`);
+    }
+    g.push(`## ${n}. Channels\n\nAfter the reboot:\n\n\`\`\`bash\nsudo /opt/mesh-stack/add-channels.sh\n\`\`\`\n\nAdds ${chans.length ? chans.join(', ') : 'nothing (none chosen)'} into the first free slots. ${c.botChannel ? `The bot answers \`${c.cmdPrefix} wx\` on ${c.botChannel}.` : 'The bot answers direct messages only.'} Add the same names in the phone app to see the same traffic.\n`);
     const reach = [`- Web UI: \`http://${c.hostname}.local/\`, or \`http://10.42.0.1/\` when joined to the AP \`${c.apSsid}\``];
     if (c.appAccess) reach.push(`- MeshCore app: Network/TCP, this node's address, port ${c.appPort}. Allowed: loopback, Tailscale (100.64.0.0/10)${c.appLan ? ', devices on the same local network' : ''}${c.appAllow ? ', ' + lines(c.appAllow.replace(/,/g, '\n')).join(', ') : ''}`);
     g.push(`## Reaching it\n\n${reach.join('\n')}\n`);
@@ -295,5 +328,5 @@ python3 provision/maps/fetch_tiles.py topo "$OUT/topo.mbtiles" "$BBOX"
     return o;
   }
 
-  return { DEFAULTS, PIS, SECRET_FIELDS, MAX_SLOTS, validate, generate, normalize, tileCount, parseBbox, wiring };
+  return { DEFAULTS, PIS, GPS_CHOICES, SECRET_FIELDS, MAX_SLOTS, validate, generate, normalize, tileCount, parseBbox, wiring };
 });

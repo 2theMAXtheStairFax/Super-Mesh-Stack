@@ -20,7 +20,8 @@ set +a
 
 : "${STACK_LCD:=1}" "${STACK_POWER:=0}" "${STACK_FOX:=0}" "${STACK_BRIDGE:=0}" "${STACK_ARGON:=0}"
 : "${STACK_HARDEN:=1}" "${STACK_AVAHI:=1}" "${STACK_UART:=1}" "${STACK_PLATFORMIO:=0}"
-: "${SMS_AP_SSID:=mesh-stack}" "${SMS_AP_PASS:=}" "${STACK_MOBILE_SSID:=}" "${STACK_MOBILE_PSK:=}"
+: "${SMS_AP_SSID:=mesh-stack}" "${SMS_AP_PASS:=}" "${STACK_WIFI_COUNTRY:=}"
+: "${STACK_HOME_SSID:=}" "${STACK_HOME_PSK:=}" "${STACK_MOBILE_SSID:=}" "${STACK_MOBILE_PSK:=}"
 
 if [ -z "$SMS_AP_PASS" ]; then
   SMS_AP_PASS="$(tr -dc 'a-km-np-zA-HJ-NP-Z2-9' </dev/urandom | head -c 14)"
@@ -107,14 +108,25 @@ install -o "$APP_USER" -g "$APP_USER" -m0755 "$HERE"/net/netmode.sh "$APP_DIR/ne
 
 echo ">> configuration"
 install -d -m0755 "$CONF_DIR"
-{ grep -v '^SMS_AP_PASS=' "$STACK_ENV"; printf "SMS_AP_PASS='%s'\n" "$SMS_AP_PASS"; } >"$CONF_DIR/stack.env"
+{ grep -vE '^(SMS_AP_PASS|STACK_(HOME|MOBILE)_PSK)=' "$STACK_ENV"; printf "SMS_AP_PASS='%s'\n" "$SMS_AP_PASS"; } >"$CONF_DIR/stack.env"
 chmod 0640 "$CONF_DIR/stack.env"
 [ -f "$HERE/channels.txt" ] && install -m0644 "$HERE/channels.txt" "$CONF_DIR/channels.txt"
 
-if [ -n "$STACK_MOBILE_SSID" ] && command -v nmcli >/dev/null; then
-  nmcli connection delete "${SMS_MOBILE_CON:-sms-mobile}" >/dev/null 2>&1 || true
-  nmcli connection add type wifi con-name "${SMS_MOBILE_CON:-sms-mobile}" ssid "$STACK_MOBILE_SSID" \
-    wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$STACK_MOBILE_PSK" connection.autoconnect yes >/dev/null
+add_wifi() {   # name ssid psk
+  nmcli connection delete "$1" >/dev/null 2>&1 || true
+  nmcli connection add type wifi con-name "$1" ssid "$2" \
+    wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$3" connection.autoconnect yes >/dev/null
+}
+if command -v nmcli >/dev/null; then
+  if [ -n "$STACK_WIFI_COUNTRY" ] && command -v raspi-config >/dev/null; then
+    raspi-config nonint do_wifi_country "$STACK_WIFI_COUNTRY" || echo "!! could not set the Wi-Fi country"
+  fi
+  if [ -n "$STACK_HOME_SSID" ]; then
+    add_wifi "${SMS_HOME_CON:-sms-home}" "$STACK_HOME_SSID" "$STACK_HOME_PSK"
+  fi
+  if [ -n "$STACK_MOBILE_SSID" ]; then
+    add_wifi "${SMS_MOBILE_CON:-sms-mobile}" "$STACK_MOBILE_SSID" "$STACK_MOBILE_PSK"
+  fi
 fi
 
 echo ">> services"

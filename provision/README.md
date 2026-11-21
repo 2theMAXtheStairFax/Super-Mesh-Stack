@@ -94,6 +94,11 @@ sudo reboot
 Settings come from `stack.env` (see the configurator); setup installs it to `/etc/mesh-stack/stack.env`,
 which every service reads.
 
+**Wi-Fi from the configurator:** if you entered a home network or mobile router, `setup.sh` creates its
+NetworkManager profile (`sms-home`, `sms-mobile`) and sets the Wi-Fi country. The passwords are used once and
+are not kept in `/etc/mesh-stack/stack.env`. You still need a way onto the Pi for the first install: enter the
+same network in Raspberry Pi Imager, or use Ethernet.
+
 **If Wi-Fi doesn't come up:** confirm the SSID is 2.4 GHz and the country is set, then
 reconfigure with `sudo nmtui` or `nmcli`. A pre-created connection profile from Imager
 is named `preconfigured`.
