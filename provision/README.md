@@ -72,7 +72,7 @@ Eject, move the card to the Pi, and power on. First boot takes 1–2 minutes.
 
 ```bash
 ssh <user>@<hostname>.local          # or ssh <user>@<node-ip>
-git clone <repo-url> ~/super-mesh-stack
+git clone https://github.com/2theMAXtheStairFax/Super-Mesh-Stack.git ~/super-mesh-stack
 # copy stack.env and channels.txt from the configurator bundle into ~/super-mesh-stack/provision/
 cd ~/super-mesh-stack/provision
 ./setup.sh
