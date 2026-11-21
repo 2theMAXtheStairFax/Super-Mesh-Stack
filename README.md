@@ -2,12 +2,31 @@
 
 A complete [MeshCore](https://meshcore.co.uk/) node for the Raspberry Pi and Heltec T114 radio, with a configurator that generates your install bundle.
 
+<p align="center">
+  <img src="docs/images/node.jpg" alt="A Raspberry Pi 3B stacked on a UPS HAT, with a printed case holding the Heltec T114 radio, a status screen and an antenna" width="420">
+</p>
+
 - **Weather on command.** Answers `wx` on a bot channel or by direct message from a local station, with no cloud API.
 - **Logging.** Telemetry and coverage logs in local SQLite, with a map of the repeaters that hear you.
 - **Field UI.** A 0.96&Prime; screen and five-way joystick for status, messages, adverts and radio control.
 - **Web UI.** Messages, weather, contacts, config and firmware flashing from any phone, including on the node's own access point.
 - **MeshCore app over the network.** A multiplexer lets the phone app and the bot share one radio.
 - **Battery operation.** Voltage monitoring, low-battery shutdown and wake-from-halt.
+
+## Screens
+
+The case holds the T114's own display beside the Pi's screen. The Pi screen shows node status and the weather page; the joystick also drives the radio's display.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/screen-dashboard.jpg" alt="Dashboard: node name, messages received, battery voltage, satellites, IP address and date, beside the T114 status screen"></td>
+    <td width="50%"><img src="docs/images/screen-weather.jpg" alt="Weather page: 72 &deg;F, 45% humidity, 49 &deg;F dew point, 29.14 in pressure, wind compass, beside the T114 radio settings screen"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Dashboard</sub></td>
+    <td align="center"><sub>Weather page</sub></td>
+  </tr>
+</table>
 
 ## Quick start
 
