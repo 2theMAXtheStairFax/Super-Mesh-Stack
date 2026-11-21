@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 from bottle import Bottle, request, response, redirect, static_file, HTTPError
 
+import about
 import regions
 
 APP_DIR = os.environ.get("SMS_DIR", "/opt/mesh-stack")
@@ -257,7 +258,7 @@ def name_for(node, names):
 
 # ── layout ─────────────────────────────────────────────────────────────────
 TABS = [("/", "Messages"), ("/weather", "Weather"), ("/contacts", "Contacts"),
-        ("/coverage", "Coverage"), ("/config", "Config"), ("/flash", "Flash")]
+        ("/coverage", "Coverage"), ("/config", "Config"), ("/flash", "Flash"), ("/about", "About")]
 
 # Oswald body/UI,
 # Bungee Hairline headings, red primary / yellow accent, pill nav + buttons.
@@ -283,6 +284,7 @@ header nav a{color:var(--text-dim);text-decoration:none;font-size:15px;padding:6
 header nav a:hover{color:var(--text);border-color:var(--surface-border)}
 header nav a.on{color:var(--text);border-color:var(--red)}
 main{max-width:900px;margin:0 auto;padding:28px 16px 56px}
+h2.sec{font-weight:500;font-size:1.3rem;margin:28px 0 12px}
 h1.page{font-family:'Bungee Hairline',cursive;font-weight:400;font-size:clamp(1.8rem,5vw,2.6rem);line-height:1.1;margin:0 0 6px}
 h1.page::after{content:'';display:block;width:60px;height:3px;margin-top:14px;background:var(--red);border-radius:2px}
 h4{font-family:'Bungee Hairline',cursive;font-weight:400;font-size:1.2rem;margin:28px 0 10px}
@@ -1113,6 +1115,27 @@ def flash_run():
         raise HTTPError(500, str(e))
     time.sleep(1)
     redirect("/flash")
+
+
+@app.get("/about")
+def about_get():
+    s = status()
+    rows = "".join(
+        f'<tr><td><a href="{esc(url)}" target=_blank rel="noopener noreferrer">{esc(name)}</a></td>'
+        f'<td>{esc(role)}</td><td>{esc(lic)}</td></tr>'
+        for name, role, lic, url in about.CREDITS)
+    return page("/about", f"""
+<table class=cfg>
+<tr><td>Project</td><td><b>{esc(about.NAME)}</b></td></tr>
+<tr><td>Version</td><td>{esc(about.VERSION)}</td></tr>
+<tr><td>Radio firmware</td><td>{esc(s.get("fw") or "unknown")}</td></tr>
+<tr><td>License</td><td>{esc(about.LICENSE)}</td></tr>
+<tr><td>Source</td><td><a href="{esc(about.REPO)}" target=_blank rel="noopener noreferrer">{esc(about.REPO)}</a></td></tr>
+</table>
+<h2 class=sec>Credits</h2>
+<table class=cfg><tr><td><b>Project</b></td><td><b>Used for</b></td><td><b>License</b></td></tr>{rows}</table>
+<p class=sub>Map data &copy; OpenStreetMap contributors. This project is not affiliated with or endorsed by the
+projects above.</p>""")
 
 
 @app.get("/events")

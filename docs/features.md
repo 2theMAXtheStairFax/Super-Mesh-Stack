@@ -55,6 +55,7 @@ Joystick menu:
 | Radio control | Joystick drives the T114's own screen: left/right page, press select, up or down back to the Pi |
 | Settings | Screen flip, control flip, message-wake for the Pi and the radio, radio screen flip, Pi and radio brightness, animations, input mode, status LED |
 | Wi-Fi | AP mode on/off toggle; client network Home / Mobile router / Auto (all kept across reboots) |
+| About | Version and license, plus a scrolling list of credits; press a credit for what it provides |
 | Restart / Shut down | Reboot or power off the Pi |
 
 The screen turns off after 15 s idle, the same as the T114's screen. A joystick press or

@@ -13,6 +13,7 @@ import psutil
 from PIL import Image, ImageDraw, ImageFont
 from st7735 import ST7735
 import navswitch as nav
+import about
 import fox
 import regions
 
@@ -666,8 +667,17 @@ class UI:
                 ("Radio control", self.enter_radio),
                 ("Wi-Fi", lambda: self.push("Wi-Fi", self.wifi_items)),
                 ("Settings", lambda: self.push("Settings", self.settings_items)),
+                ("About", lambda: self.push("ABOUT", self.about_items)),
                 ("Restart", lambda: self.ask("Restart?", ['sudo', '/usr/bin/systemctl', 'reboot'])),
                 ("Shut down", lambda: self.ask("Shut down?", ['sudo', '/usr/bin/systemctl', 'poweroff']))]
+
+    def about_items(self):
+        return [(f"v{about.VERSION}", lambda: self.show_flash(about.NAME, f"version {about.VERSION}", f"{about.LICENSE} license")),
+                ("Credits", lambda: self.push("CREDITS", self.credits_items))]
+
+    def credits_items(self):
+        return [(name[:20], lambda n=name, r=role, li=lic: self.show_flash(n, r, li) if li else self.show_flash(n, r))
+                for name, role, lic, _ in about.CREDITS]
 
     def settings_items(self):
         return [(f"Screen: {'Flipped' if S['flip'] else 'Normal'}", self.toggle_flip),

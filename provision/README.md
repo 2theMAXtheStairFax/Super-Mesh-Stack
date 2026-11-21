@@ -366,7 +366,7 @@ router's 2.4 GHz security to WPA2-PSK only.
 
 `http://<hostname>.local/` on the home Wi-Fi, or `http://10.42.0.1/` on the AP.
 Built on `bottle`, styled with Oswald / Bungee Hairline fonts served
-from `static/`, so it looks the same offline on the AP). Five tabs:
+from `static/`, so it looks the same offline on the AP). Seven tabs:
 
 | Tab | Does |
 |---|---|
@@ -375,6 +375,8 @@ from `static/`, so it looks the same offline on the AP). Five tabs:
 | **Contacts** | node's contacts + a copy-paste `meshcore://contact/add?…` URI for each (import into the station radio via the phone app) and an import box for URIs coming back |
 | **Config** | edit `config.json` (channels shown by name); bot applies it in ~5 s |
 | **Flash** | shows the radio's firmware; flashes the bundled **patched build** or the **stock** latest release over a **USB cable** (Pi → T114) or **internal SWD wiring** (Pi GPIO → T114 debug pads), with no button presses: stops the bot, flashes, restarts the bot. See [`firmware/t114/`](firmware/t114/README.md#flashing) |
+| **Coverage** | repeaters that heard your pings and surveys, by GPS position: map, table and CSV export |
+| **About** | version, license, source link, and credits for the projects this stack builds on |
 
 `/events` is still a plain-text tail. Swap `/opt/mesh-stack/static/logo.png` for a
 different logo.
