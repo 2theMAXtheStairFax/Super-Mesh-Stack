@@ -40,8 +40,9 @@ def contrast(a, b):
 
 
 def on_rgb(rgb):
-    """Black or white, whichever reads better on `rgb`."""
-    return (0, 0, 0) if contrast(rgb, (0, 0, 0)) >= contrast(rgb, (255, 255, 255)) else (255, 255, 255)
+    """White when it meets 4.5:1 (the usual look on saturated colors), else whichever reads better."""
+    white, black = contrast(rgb, (255, 255, 255)), contrast(rgb, (0, 0, 0))
+    return (255, 255, 255) if white >= 4.5 or white >= black else (0, 0, 0)
 
 
 def readable(h, bg, minimum=4.5):

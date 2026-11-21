@@ -28,6 +28,8 @@ class ColorMathTest(unittest.TestCase):
             self.assertGreaterEqual(colors.contrast(rgb, colors.on_rgb(rgb)), 4.5, rgb)
         self.assertEqual(colors.on_rgb((255, 204, 0)), (0, 0, 0))
         self.assertEqual(colors.on_rgb((200, 20, 20)), (255, 255, 255))
+        self.assertEqual(colors.on_rgb((0x2a, 0x6d, 0xf4)), (255, 255, 255))   # white and black tie; white is the convention
+        self.assertEqual(colors.on_rgb((0x80, 0x80, 0x80)), (0, 0, 0))
 
     def test_ink_always_reads_on_the_page_background(self):
         rng = random.Random(11)
