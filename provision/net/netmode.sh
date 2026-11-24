@@ -8,13 +8,17 @@
 #   netmode.sh ap on|off|toggle   AP mode on / off (off rejoins NET)
 #   netmode.sh home|mobile|auto   pick the client network (turns AP off)
 #   netmode.sh status             print AP, NET and what wlan0 is doing now
+#   netmode.sh wifi add SSID      save a client network (PSK on stdin, empty = open)
+#   netmode.sh wifi edit CON SSID change a saved network (PSK on stdin, empty = keep)
+#   netmode.sh wifi del CON       forget a saved network
+#   netmode.sh wifi join CON      connect to a saved network now (turns AP off)
 #   netmode.sh boot               apply the saved settings (sms-netmode.service)
 #   netmode.sh prep               create the AP profile only
 #   (legacy: 'netmode.sh ap' = ap on, 'client' = ap off)
 #
 # home / mobile are a preference: if that network isn't in range the other one is tried.
 # With AP off and no known network in range, the AP comes up anyway as a rescue so the
-# node is never unreachable; AP stays 'off' in the settings, and the next 'boot' or
+# node is never unreachable (unless a wired link is up); AP stays 'off' in the settings, and the next 'boot' or
 # 'ap off' tries the client networks again.
 #
 # Config via env (see sms-netmode.service):
@@ -31,6 +35,7 @@ AP_PASS="${SMS_AP_PASS:-}"
 HOME_CON="${SMS_HOME_CON:-${SMS_CLIENT_CON:-preconfigured}}"
 MOBILE_CON="${SMS_MOBILE_CON:-sms-mobile}"
 STATE=/var/lib/mesh-stack/netmode.conf
+LIVE=/run/sms-netmode.live      # ap | client: what wlan0 is actually doing right now
 PRIO_HI=20 PRIO_LO=10           # NetworkManager autoconnect priorities: preferred / other
 
 AP=off NET=auto
@@ -42,6 +47,8 @@ save() {
   printf 'AP=%s\nNET=%s\n' "$AP" "$NET" > "$STATE.tmp" && chmod 644 "$STATE.tmp"
   mv "$STATE.tmp" "$STATE"
 }
+
+live() { echo "$1" > "$LIVE"; chmod 644 "$LIVE"; }
 
 wifi_dev() { nmcli -t -f DEVICE,TYPE device | awk -F: '$2=="wifi"{print $1; exit}'; }
 has_con()  { nmcli -t -f NAME connection show | grep -qxF "$1"; }
@@ -61,6 +68,7 @@ go_ap() {
   ensure_ap_profile
   nmcli connection modify "$AP_CON" wifi-sec.psk "$AP_PASS" 802-11-wireless.ssid "$AP_SSID"
   nmcli connection up "$AP_CON" >/dev/null
+  live ap
   echo "netmode: AP '$AP_SSID' up on $(wifi_dev) (10.42.0.1)"
 }
 
@@ -68,19 +76,26 @@ go_ap() {
 # so NetworkManager's own reconnects after a dropout follow the same preference.
 client_order() {
   case "$NET" in
-    mobile) echo "$MOBILE_CON $HOME_CON" ;;
-    *)      echo "$HOME_CON $MOBILE_CON" ;;
+    mobile) printf '%s\n' "$MOBILE_CON" "$HOME_CON" ;;
+    *)      printf '%s\n' "$HOME_CON" "$MOBILE_CON" ;;
   esac
+  saved_clients | grep -vxF -e "$HOME_CON" -e "$MOBILE_CON" || true
 }
 
+# Saved Wi-Fi client profiles (everything but the AP), one per line.
+saved_clients() {
+  nmcli -t -f NAME,TYPE connection show | awk -F: -v ap="$AP_CON" '$2=="802-11-wireless" && $1!=ap{print $1}'
+}
+is_client() { local l; l="$(saved_clients)"; [[ $'\n'$l$'\n' == *$'\n'"$1"$'\n'* ]]; }
+
 set_priorities() {
-  local first=1 c
-  for c in $(client_order); do
+  local n=0 c prio
+  while IFS= read -r c; do
     has_con "$c" || continue
-    nmcli connection modify "$c" connection.autoconnect yes \
-      connection.autoconnect-priority "$([ $first = 1 ] && echo $PRIO_HI || echo $PRIO_LO)"
-    first=0
-  done
+    case $n in 0) prio=$PRIO_HI ;; 1) prio=$PRIO_LO ;; *) prio=0 ;; esac
+    nmcli connection modify "$c" connection.autoconnect yes connection.autoconnect-priority "$prio"
+    n=$((n + 1))
+  done < <(client_order)
 }
 
 go_client() {
@@ -90,16 +105,22 @@ go_client() {
   sleep 4
   local seen c ssid
   seen="$(nmcli -t -f SSID device wifi list 2>/dev/null || true)"
-  for c in $(client_order); do
+  while IFS= read -r c; do
     has_con "$c" || continue
     ssid="$(con_ssid "$c")"
     if [ -n "$ssid" ] && grep -qxF "$ssid" <<<"$seen"; then
       if nmcli connection up "$c" >/dev/null 2>&1; then
+        live client
         echo "netmode: client '$c' ($ssid) up"; return 0
       fi
       echo "netmode: '$c' ($ssid) in range but failed to connect" >&2
     fi
-  done
+  done < <(client_order)
+  if [[ "$(nmcli -t -f TYPE,STATE device)" == *ethernet:connected* ]]; then
+    live client
+    echo "netmode: no known Wi-Fi joined, but the wired link is up - AP stays off"
+    return 0
+  fi
   echo "netmode: no known Wi-Fi joined - rescue AP (AP setting stays off)"
   go_ap
 }
@@ -114,7 +135,39 @@ status() {
   nmcli -t -f IP4.ADDRESS device show "$dev" 2>/dev/null | cut -d: -f2- | sed 's/^/ip=/'
 }
 
+wifi() {
+  local sub="${1:-}" con="${2:-}" ssid psk
+  case "$sub" in
+    add)
+      ssid="$con"; read -r psk || psk=""
+      [ -n "$ssid" ] || { echo "SSID required" >&2; exit 2; }
+      con="${ssid//:/_}"
+      has_con "$con" && { echo "'$con' is already saved" >&2; exit 1; }
+      local sec=()
+      [ -n "$psk" ] && sec=(wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$psk")
+      nmcli connection add type wifi ifname "$(wifi_dev)" con-name "$con" ssid "$ssid" \
+        connection.autoconnect yes "${sec[@]}" >/dev/null ;;
+    edit)
+      ssid="${3:-}"; read -r psk || psk=""
+      is_client "$con" || { echo "no such saved network" >&2; exit 1; }
+      [ -n "$ssid" ] || { echo "SSID required" >&2; exit 2; }
+      nmcli connection modify "$con" 802-11-wireless.ssid "$ssid"
+      if [ -n "$psk" ]; then
+        nmcli connection modify "$con" wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$psk"
+      fi ;;
+    del)
+      is_client "$con" || { echo "no such saved network" >&2; exit 1; }
+      nmcli connection delete "$con" >/dev/null ;;
+    join)
+      is_client "$con" || { echo "no such saved network" >&2; exit 1; }
+      AP=off; save
+      nmcli connection up "$con" >/dev/null && live client ;;
+    *) echo "usage: netmode.sh wifi {add SSID | edit CON SSID | del CON | join CON}" >&2; exit 2 ;;
+  esac
+}
+
 case "${1:-boot}" in
+  wifi)   shift; wifi "$@" ;;
   prep)   ensure_ap_profile; nmcli -f connection.id,802-11-wireless.mode,802-11-wireless.ssid connection show "$AP_CON" ;;
   ap)
     case "${2:-on}" in

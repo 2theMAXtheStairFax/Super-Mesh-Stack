@@ -12,6 +12,7 @@ config.json (Config tab), and kicks flash.sh (Flash tab).
 import html
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import time
@@ -37,6 +38,11 @@ STATIC_DIR = os.environ.get("SMS_STATIC", f"{APP_DIR}/static")
 MAP_DIR = os.environ.get("SMS_MAPS", f"{APP_DIR}/maps")    # dark.mbtiles, topo.mbtiles
 FLASH_LOG = f"{APP_DIR}/flash.log"
 FLASH_SH = f"{APP_DIR}/flash.sh"
+NETMODE_SH = f"{APP_DIR}/net/netmode.sh"
+NETMODE_CONF = "/var/lib/mesh-stack/netmode.conf"
+NETLIVE = "/run/sms-netmode.live"
+HOME_CON = os.environ.get("SMS_HOME_CON", "preconfigured")
+MOBILE_CON = os.environ.get("SMS_MOBILE_CON", "sms-mobile")
 FW_DIR = f"{APP_DIR}/firmware"
 PORT = int(os.environ.get("SMS_WEB_PORT", "80"))
 MAX_SEND = 180
@@ -311,10 +317,13 @@ code{color:var(--yellow-ink)}
 .msg.tx .who{color:var(--red-ink)}
 .meta{color:var(--text-dim);font-size:12px;font-weight:300}
 form.row{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;align-items:center}
-input[type=text],input[type=number],select,textarea{font:inherit;padding:9px 12px;background:var(--field);color:var(--text);
+input[type=text],input[type=number],input[type=password],select,textarea{font:inherit;padding:9px 12px;background:var(--field);color:var(--text);
   border:1px solid var(--surface-border);border-radius:8px}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--yellow-ink);outline-offset:1px}
 input[type=text]{flex:1;min-width:180px}
+.wifi input{flex:1;min-width:160px}
+.wifi button{padding:6px 16px;font-size:13px}
+.wifi summary{cursor:pointer;color:var(--text-dim)}
 button{font:700 15px 'Oswald',sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:10px 24px;border-radius:999px;
   border:0;background:var(--red);color:var(--on-red);cursor:pointer;transition:background-color .2s,box-shadow .2s}
 button:hover{filter:brightness(1.12);box-shadow:0 0 0 3px color-mix(in srgb,var(--yellow) 35%,transparent)}
@@ -365,6 +374,11 @@ main.wide h1.page,main.wide>.sub{display:none}
 .it.on{background:var(--surface);color:var(--text);box-shadow:inset 3px 0 0 var(--red)}
 .it .ic{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:13px;
   font-weight:700;color:#fff;background:var(--surface-border)}
+.it .dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--red-ink)}
+.it.un{color:var(--text)}
+.it.un .nm{font-weight:700}
+#readall{width:100%;margin-bottom:2px;padding:5px 12px;font-size:12px}
+#readall:disabled{opacity:.45;cursor:default;box-shadow:none}
 .it .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #pane{display:flex;flex-direction:column;min-width:0;min-height:0}
 #pane .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--surface-border)}
@@ -544,6 +558,7 @@ CHAT_HTML = r"""
 <div class=chat>
  <aside id=side>
   <input id=find type=search placeholder="Find a channel, contact or repeater">
+  <button id=readall class=alt type=button>Mark all read</button>
   <div class=sec>Channels</div><div id=lc></div>
   <div class=sec>Direct messages</div><div id=ld></div>
   <div class=sec>Repeaters &amp; rooms</div><div id=lr></div>
@@ -559,7 +574,11 @@ CHAT_HTML = r"""
 </div>
 <script>
 const $ = s => document.querySelector(s);
-let cur = location.hash.slice(1) || 'c0', data = null, lastId = 0, timer = null;
+let cur = location.hash.slice(1) || 'c0', data = null, lastId = 0, timer = null, seen = null;
+try { seen = JSON.parse(localStorage.getItem('sms-seen')); } catch (e) {}
+const keep = () => { try { localStorage.setItem('sms-seen', JSON.stringify(seen)); } catch (e) {} };
+const unread = c => c.last && c.last > (seen && seen[c.id] || 0);
+const everyone = () => [...data.channels, ...data.dms, ...data.contacts];
 const hue = s => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const ago = t => { if (!t) return ''; const s = Date.now() / 1000 - t;
   return s < 60 ? 'now' : s < 3600 ? Math.floor(s / 60) + 'm' : s < 86400 ? Math.floor(s / 3600) + 'h' : Math.floor(s / 86400) + 'd'; };
@@ -571,17 +590,21 @@ function item(c, icon) {
   const i = el('span', 'ic', icon || (c.name || '?').replace(/[^\p{L}\p{N}]/gu, '').slice(0, 1).toUpperCase() || '?');
   if (!icon) i.style.background = `hsl(${hue(c.name)} 55% 38%)`;
   a.append(i, el('span', 'nm', c.name), el('span', 'meta', ago(c.last)));
+  if (c.id !== cur && unread(c)) { a.classList.add('un'); a.append(el('span', 'dot')); }
   return a;
 }
 function sidebar() {
   if (!data) return;
   const q = $('#find').value.trim().toLowerCase(), hit = c => !q || c.name.toLowerCase().includes(q);
   const fill = (box, list, icon) => { box.replaceChildren(...list.filter(hit).map(c => item(c, icon))); };
-  fill($('#lc'), data.channels, '#');
+  fill($('#lc'), data.channels.slice().sort((a, b) => (b.last || 0) - (a.last || 0)), '#');
   const dmIds = new Set(data.dms.map(d => d.id));
   fill($('#ld'), data.dms);
   const rpt = data.contacts.filter(c => c.type === 2 || c.type === 3);
   fill($('#lr'), q ? rpt : rpt.filter(c => c.last).concat(rpt.filter(c => !c.last)).slice(0, 25), '⇄');
+  const n = new Set(everyone().filter(c => c.id !== cur && unread(c)).map(c => c.id)).size;
+  $('#readall').disabled = !n;
+  $('#readall').textContent = n ? `Mark all read (${n})` : 'Mark all read';
   $('#lf').replaceChildren(...(q ? [el('div', 'sec', 'Start a DM'),
     ...data.contacts.filter(c => c.type === 1 && !dmIds.has(c.id) && hit(c)).slice(0, 20).map(c => item(c))] : []));
 }
@@ -633,8 +656,14 @@ async function load(full) {
                                      : 'No messages yet.')]));
   if (full || atEnd) log.scrollTop = log.scrollHeight;
 }
+function markRead(id) {
+  const c = find(id);
+  if (c && c.last && seen) { seen[id] = c.last; keep(); }
+}
 async function convos() {
   data = await (await fetch('/api/convos')).json();
+  if (!seen) { seen = {}; everyone().forEach(c => c.last && (seen[c.id] = c.last)); keep(); }
+  if (!document.hidden) markRead(cur);
   sidebar(); header();
 }
 async function rpt(action, pwd) {
@@ -644,6 +673,7 @@ async function rpt(action, pwd) {
 }
 function open(id) {
   cur = id; lastId = 0;
+  markRead(id);
   document.body.classList.remove('side');
   sidebar(); header(); load(true);
 }
@@ -657,6 +687,8 @@ $('#compose').onsubmit = async e => {
   setTimeout(() => load(), 1500);
 };
 $('#find').oninput = sidebar;
+$('#readall').onclick = () => { everyone().forEach(c => c.last && (seen[c.id] = c.last)); keep(); sidebar(); };
+document.onvisibilitychange = () => { if (!document.hidden) convos(); };
 $('#back').onclick = () => document.body.classList.toggle('side');
 window.onhashchange = () => open(location.hash.slice(1) || 'c0');
 convos().then(() => open(cur));
@@ -993,6 +1025,97 @@ def coverage_csv():
     return "\n".join(lines) + "\n"
 
 
+def nmcli(*args):
+    try:
+        return subprocess.run(["nmcli", *args], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def wifi_cons():
+    """Saved client networks: [(connection, ssid, active, role)]."""
+    unesc = lambda n: n.replace("\\:", ":")
+    active = {unesc(n) for n in nmcli("-t", "-f", "NAME", "connection", "show", "--active").splitlines()}
+    rows = []
+    for line in nmcli("-t", "-f", "NAME,TYPE", "connection", "show").splitlines():
+        name, _, typ = line.rpartition(":")
+        name = unesc(name)
+        if typ != "802-11-wireless":
+            continue
+        got = nmcli("-g", "802-11-wireless.ssid,802-11-wireless.mode", "connection", "show", name).splitlines()
+        ssid, mode = (got + ["", ""])[:2]
+        if mode == "ap":
+            continue
+        role = "home" if name == HOME_CON else "mobile" if name == MOBILE_CON else ""
+        rows.append((name, ssid or name, name in active, role))
+    return rows
+
+
+def ap_live():
+    """True while the node is hosting its AP, rescue AP included."""
+    try:
+        with open(NETLIVE) as f:
+            return f.read().strip() == "ap"
+    except OSError:
+        pass
+    try:
+        with open(NETMODE_CONF) as f:
+            return "AP=on" in f.read()
+    except OSError:
+        return False
+
+
+def netmode(*args, stdin="", detach=False):
+    """Runs net/netmode.sh as root. detach: the call may drop our own Wi-Fi link, so don't wait."""
+    cmd = ["sudo", "-n", NETMODE_SH, *args]
+    if detach:
+        subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, start_new_session=True)
+        return
+    try:
+        r = subprocess.run(cmd, input=stdin + "\n", capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise HTTPError(500, f"netmode: {e}")
+    if r.returncode:
+        raise HTTPError(400, (r.stderr or "netmode failed").strip())
+
+
+def wifi_form():
+    ssid = (request.forms.getunicode("ssid") or "").strip()
+    psk = request.forms.getunicode("psk") or ""
+    if not ssid or len(ssid.encode()) > 32:
+        raise HTTPError(400, "SSID must be 1-32 bytes")
+    if psk and not 8 <= len(psk) <= 63:
+        raise HTTPError(400, "Password must be 8-63 characters (blank for an open network)")
+    if re.search(r"[\r\n\0]", ssid + psk):
+        raise HTTPError(400, "Line breaks are not allowed")
+    return ssid, psk
+
+
+def wifi_section():
+    ap = ap_live()
+    rows = ""
+    for name, ssid, active, role in wifi_cons():
+        tags = " &middot; ".join(t for t in ("connected" if active else "", role) if t)
+        hid = f'<input type=hidden name=con value="{esc(name)}">'
+        rows += f"""<div class=msg><div class=row style="margin:0;justify-content:space-between">
+<span><b>{esc(ssid)}</b> <span class=meta>{tags}</span></span><span class=row style="margin:0">
+<form method=post action=/wifi/join>{hid}<button class=alt>Connect</button></form>
+<form method=post action=/wifi/del onsubmit="return confirm('Forget this network?')">{hid}<button class=alt>Remove</button></form></span></div>
+<details><summary>Edit</summary><form class=row method=post action=/wifi/edit>{hid}
+<input type=text name=ssid value="{esc(ssid)}" maxlength=32 required placeholder="SSID">
+<input type=password name=psk placeholder="new password (blank = keep)" autocomplete=new-password>
+<button>Save</button></form></details></div>"""
+    return f"""<h4 id=wifi>Wi-Fi</h4><div class=wifi>
+<form class=row method=post action=/wifi/ap><span>Access point: <b>{"ON" if ap else "off"}</b></span>
+<button name=on value={0 if ap else 1}>Turn {"off" if ap else "on"}</button></form>
+{rows or '<p class=sub>No saved networks.</p>'}
+<form class=row method=post action=/wifi/add><input type=text name=ssid maxlength=32 required placeholder="SSID">
+<input type=password name=psk placeholder="password (blank = open)" autocomplete=new-password><button>Add network</button></form>
+<p class=sub>Saved networks are tried in order: the preferred home / mobile one first, then the rest.
+Edits to the active network apply when it next reconnects.</p></div>"""
+
+
 @app.get("/config")
 def config_get():
     c = cfg()
@@ -1041,7 +1164,8 @@ def config_get():
 </form>
 <p class=sub>Saved to <code>config.json</code>; the bot picks it up within ~5 s. A new radio name reaches the mesh with the next advert (Contacts tab).</p>
 <p class=sub>Radio flood scope: <code>{("#" + esc(status().get("region_scope", ""))) if status().get("region_scope") else "none (unscoped)"}</code>.
-A scope applies to every flood the radio sends, adverts and DMs without a known path included, and only repeaters carrying it forward them. Leave it off on meshes that don't use scopes.</p>""")
+A scope applies to every flood the radio sends, adverts and DMs without a known path included, and only repeaters carrying it forward them. Leave it off on meshes that don't use scopes.</p>
+{wifi_section()}""")
 
 
 @app.post("/config")
@@ -1092,6 +1216,38 @@ def config_post():
     except OSError as e:
         raise HTTPError(500, f"write failed: {e}")
     redirect("/config")
+
+
+@app.post("/wifi/add")
+def wifi_add():
+    ssid, psk = wifi_form()
+    netmode("wifi", "add", ssid, stdin=psk)
+    redirect("/config#wifi")
+
+
+@app.post("/wifi/edit")
+def wifi_edit():
+    ssid, psk = wifi_form()
+    netmode("wifi", "edit", request.forms.getunicode("con") or "", ssid, stdin=psk)
+    redirect("/config#wifi")
+
+
+@app.post("/wifi/del")
+def wifi_del():
+    netmode("wifi", "del", request.forms.getunicode("con") or "")
+    redirect("/config#wifi")
+
+
+@app.post("/wifi/join")
+def wifi_join():
+    netmode("wifi", "join", request.forms.getunicode("con") or "", detach=True)
+    redirect("/config#wifi")
+
+
+@app.post("/wifi/ap")
+def wifi_ap():
+    netmode("ap", "on" if request.forms.get("on") == "1" else "off", detach=True)
+    redirect("/config#wifi")
 
 
 def flash_methods():

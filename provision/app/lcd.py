@@ -47,7 +47,9 @@ POWER_FILE = '/opt/mesh-stack/power.json'
 DB_FILE = '/opt/mesh-stack/telemetry.sqlite'
 CHANNELS_FILE = '/opt/mesh-stack/channels.json'
 NETMODE_FILE = '/var/lib/mesh-stack/netmode.conf'   # written by net/netmode.sh
+NETLIVE_FILE = '/run/sms-netmode.live'            # 'ap' | 'client': what wlan0 is doing now
 MSG_LIMIT = 50      # messages listed in the Messages browser
+DOT, NO_DOT = '\x01', '\x02'   # menu label prefixes: red unread dot / same indent without one
 BOT_CHANNELS = ('bot', 'wx', 'weather', 'test', 'wardriv')   # name fragments left out of the channel pages
 WX_DB = '/opt/mesh-stack/weather.sqlite'
 CONTACTS_FILE = '/opt/mesh-stack/contacts.json'
@@ -395,7 +397,12 @@ def draw_menu(w, h, title, labels, sel, hl_y=None):
     d.rectangle([0, hl_y, w - 1, hl_y + 15], fill=HEAD_BG)
     for i, label in enumerate(labels[top:top + ROWS]):
         y = 16 + i * 16
-        rich_text(img, d, (6, y + 1), label, F_BODY, FG)
+        x = 6
+        if label[:1] in (DOT, NO_DOT):
+            if label[0] == DOT:
+                d.ellipse([6, y + 4, 13, y + 11], fill=(255, 59, 59))
+            label, x = label[1:], 18
+        rich_text(img, d, (x, y + 1), label, F_BODY, FG)
     return img
 
 def draw_reader(w, h, msg, scroll, title="MESSAGE", with_sender=False):
@@ -449,6 +456,41 @@ def chat_channels():
     out = [(idx, ts) for idx, ts in rows
            if not any(b in names.get(str(idx), '').lower() for b in BOT_CHANNELS)]
     return out or [(0, None)]
+
+def convo_state():
+    """(channels, dms) heard so far, newest first. channels: (idx, last incoming rowid, ts);
+    dms: (peer, last incoming rowid or 0, ts). Bot channels and own sends don't count as unread."""
+    names = read_json(CHANNELS_FILE)
+    try:
+        c = sqlite3.connect(f'file:{DB_FILE}?mode=ro', uri=True, timeout=1)
+        chans = c.execute("SELECT channel_idx, MAX(rowid), MAX(ts) FROM rx WHERE channel_idx IS NOT NULL "
+                          "AND source != 'tx' GROUP BY channel_idx ORDER BY MAX(rowid) DESC").fetchall()
+        dms = c.execute("SELECT peer, COALESCE(MAX(CASE WHEN source = 'dm' THEN rowid END), 0), MAX(ts) "
+                        "FROM rx WHERE peer IS NOT NULL AND source IN ('dm', 'tx') "
+                        "GROUP BY peer ORDER BY MAX(rowid) DESC").fetchall()
+        c.close()
+    except sqlite3.Error:
+        return [], []
+    return [r for r in chans if not any(b in names.get(str(r[0]), '').lower() for b in BOT_CHANNELS)], dms
+
+def peer_name(peer):
+    for c in read_json(CONTACTS_FILE) or []:
+        if isinstance(c, dict) and (c.get('public_key') or '')[:12].lower() == peer:
+            return c.get('name') or peer
+    return peer
+
+def thread_rows(peer=None, chan=None, n=30):
+    """Newest first: one DM thread (peer) or one channel (chan)."""
+    where, arg = (("peer = ? AND source IN ('dm', 'tx')", peer) if chan is None
+                  else ("channel_idx = ?", chan))
+    try:
+        c = sqlite3.connect(f'file:{DB_FILE}?mode=ro', uri=True, timeout=1)
+        rows = c.execute(f"SELECT ts, source, sender, channel_idx, text FROM rx WHERE {where} "
+                         "ORDER BY rowid DESC LIMIT ?", (arg, n)).fetchall()
+        c.close()
+        return rows
+    except sqlite3.Error:
+        return []
 
 def latest_weather():
     try:
@@ -669,6 +711,7 @@ class UI:
         self.page = None            # 'wx' | 'pub' | 'map' | 'wd' - pages off the dashboard
         self.pub_scroll, self.pub_lines = 0, 1
         self.pub_chan = 0           # channel shown on the 'pub' page
+        self.mark_t = 0.0
         self.map_zoom, self.map_labels = 4, False
 
     def show_flash(self, *lines, secs=FLASH_S):
@@ -717,17 +760,62 @@ class UI:
         S['flip'] = not S['flip']; save_settings()
         lcd.set_flip(S['flip'])
 
+    def unread_state(self):
+        """(channels, dms, seen): seen maps 'c<idx>' / 'd<peer>' to the last rowid read. First run
+        counts everything as read."""
+        chans, dms = convo_state()
+        if 'seen' not in S:
+            S['seen'] = {**{f'c{i}': r for i, r, _ in chans}, **{f'd{p}': r for p, r, _ in dms}}
+            save_settings()
+        return chans, dms, S['seen']
+
+    def mark_read(self, key=None):
+        """Mark one conversation ('c3', 'd<peer>') read, or all of them."""
+        chans, dms = convo_state()
+        seen, changed = S.setdefault('seen', {}), False
+        for k, r in [(f'c{i}', r) for i, r, _ in chans] + [(f'd{p}', r) for p, r, _ in dms]:
+            if key in (None, k) and seen.get(k, 0) < r:
+                seen[k], changed = r, True
+        if changed:
+            save_settings()
+
+    def mark_all_read(self):
+        self.mark_read()
+        self.show_flash("All messages", "marked read")
+
     def message_items(self):
-        rows = recent_messages()
+        chans, dms, seen = self.unread_state()
+        uc = sum(r > seen.get(f'c{i}', 0) for i, r, _ in chans)
+        ud = sum(r > seen.get(f'd{p}', 0) for p, r, _ in dms)
+        tag = lambda n: (DOT if n else NO_DOT, f" ({n})" if n else "")
+        return [(f"{tag(uc)[0]}Channels{tag(uc)[1]}", lambda: self.push("Channels", self.channel_items)),
+                (f"{tag(ud)[0]}Direct messages{tag(ud)[1]}", lambda: self.push("Direct msgs", self.dm_items)),
+                (f"{NO_DOT}Recent (all)", lambda: self.push("Recent", self.recent_items)),
+                (f"{NO_DOT}Mark all read", self.mark_all_read)]
+
+    def msg_items(self, rows):
         if not rows:
             return [("No messages yet", lambda: None)]
         items = []
         for row in rows:
             ts, source, sender, idx, text = row
             who = "me" if source == "tx" else (sender or "?")
-            items.append((f"{who[:8]}: {msg_body(sender, text)}"[:40],
-                          lambda r=row: self.open_msg(r)))
+            items.append((f"{who[:8]}: {msg_body(sender, text)}"[:40], lambda r=row: self.open_msg(r)))
         return items
+
+    def recent_items(self):
+        return self.msg_items(recent_messages())
+
+    def dm_items(self):
+        _, dms, seen = self.unread_state()
+        if not dms:
+            return [("No DMs yet", lambda: None)]
+        return [(f"{DOT if r > seen.get(f'd{p}', 0) else NO_DOT}{peer_name(p)[:14]}  {ago(int(time.time() - ts))}",
+                 lambda p=p: self.open_dm(p)) for p, r, ts in dms]
+
+    def open_dm(self, peer):
+        self.mark_read(f'd{peer}')
+        self.push(peer_name(peer)[:14], lambda: self.msg_items(thread_rows(peer)))
 
     def fox_items(self):
         """Auto-broadcast toggle, send now, then the live telemetry (fox.py via Mission Planner)."""
@@ -765,9 +853,13 @@ class UI:
         self.show_flash("Fox telemetry sent", "on #aerial")
 
     def wifi_items(self):
-        """AP on/off toggle plus the client network; '*' marks the saved choice."""
+        """AP on/off toggle (live state) plus the client network; '*' marks the saved choice."""
         st = netmode_state()
-        ap_on = st.get('AP') == 'on'
+        try:
+            with open(NETLIVE_FILE) as f:
+                ap_on = f.read().strip() == 'ap'      # includes the rescue AP
+        except OSError:
+            ap_on = st.get('AP') == 'on'
         net = st.get('NET', 'auto')
         mark = lambda n: '*' if not ap_on and net == n else ' '
         return [(f"AP mode: {'ON' if ap_on else 'off'}",
@@ -801,15 +893,20 @@ class UI:
             self.show_flash("Advert failed", str(e)[:24])
 
     def channel_items(self):
-        return [(f"{chan_name(idx)}  {ago(int(time.time() - ts)) if ts else ''}",
-                 lambda i=idx: self.open_channel(i)) for idx, ts in chat_channels()]
+        chans, _, seen = self.unread_state()
+        if not chans:
+            return [("No channels yet", lambda: None)]
+        return [(f"{DOT if r > seen.get(f'c{i}', 0) else NO_DOT}{chan_name(i)}  {ago(int(time.time() - ts))}",
+                 lambda i=i: self.open_channel(i)) for i, r, ts in chans]
 
     def open_channel(self, idx):
-        self.stack.clear()
-        self.page, self.pub_chan, self.pub_scroll = 'pub', idx, 0
+        """The channel's recent messages, newest first; open one to read it."""
+        self.mark_read(f'c{idx}')
+        self.pub_chan = idx
+        self.push(chan_name(idx)[:14], lambda: self.msg_items(thread_rows(chan=idx)))
 
     def open_msg(self, row):
-        self.reader = [row, 0, 1]
+        self.reader = [row, 0, 1, True]
 
     def enter_radio(self):
         self.stack.clear()
@@ -1001,10 +1098,10 @@ class UI:
             i = chans.index(self.pub_chan) if self.pub_chan in chans else 0
             if pressed & (nav.UP | nav.DOWN):
                 self.pub_chan = chans[(i + (1 if pressed & nav.DOWN else -1)) % len(chans)]
+                self.mark_read(f'c{self.pub_chan}')
             elif pressed & nav.CENTER:
-                row = latest_in(self.pub_chan)
-                if row:
-                    self.reader = [row, 0, 1, True]
+                self.page = None
+                self.open_channel(self.pub_chan)
             elif pressed & nav.RIGHT:
                 self.page = None
                 self.push("CHANNELS", self.channel_items)
@@ -1038,6 +1135,7 @@ class UI:
             elif pressed & nav.RIGHT:
                 self.page, self.pub_scroll = 'pub', 0
                 self.pub_chan = chat_channels()[0][0]   # most recent chat channel
+                self.mark_read(f'c{self.pub_chan}')
             elif pressed & nav.LEFT:
                 self.page = 'wx'
             elif pressed & nav.UP:
@@ -1087,6 +1185,9 @@ class UI:
             name = chan_name(self.pub_chan)
             pos = f" {chans.index(self.pub_chan) + 1}/{len(chans)}" if self.pub_chan in chans else ""
             row = latest_in(self.pub_chan)
+            if time.monotonic() - self.mark_t > 3:      # keep what's on screen counted as read
+                self.mark_t = time.monotonic()
+                self.mark_read(f'c{self.pub_chan}')
             if not row:
                 return draw_msg(W, H, [f"No {name} messages yet", "◀ back"], title=name.upper())
             img, self.pub_lines = draw_reader(W, H, row, 0, title=name.upper() + pos, with_sender=True)
