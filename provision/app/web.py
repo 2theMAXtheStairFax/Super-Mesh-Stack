@@ -26,10 +26,12 @@ import about
 import colors
 import names
 import regions
+from power import batt_pct
 
 APP_DIR = os.environ.get("SMS_DIR", "/opt/mesh-stack")
 DB_PATH = os.environ.get("SMS_DB", f"{APP_DIR}/telemetry.sqlite")
 STATUS_PATH = os.environ.get("SMS_STATUS", f"{APP_DIR}/status.json")
+POWER_PATH = os.environ.get("SMS_POWER_JSON", f"{APP_DIR}/power.json")
 CHANNELS_PATH = os.environ.get("SMS_CHANNELS", f"{APP_DIR}/channels.json")
 CONTACTS_PATH = os.environ.get("SMS_CONTACTS", f"{APP_DIR}/contacts.json")
 CONFIG_PATH = os.environ.get("SMS_CONFIG", f"{APP_DIR}/config.json")
@@ -249,6 +251,38 @@ def gps_text(s):
     return f"GPS {s.get('gps_sats') or 0} sats{'' if fix else ', no fix'}"
 
 
+def header_stats():
+    """Header bar items: {id: (text, level, tooltip)}."""
+    s, pw, now = status(), _json(POWER_PATH, {}), time.time()
+    lag = now - s.get("ts", 0)
+    live = lag < 120
+
+    v, ma = pw.get("volts"), pw.get("milliamps")
+    batt = ("🔋 N/A", "dim", "No reading from sms-power")
+    if v and now - pw.get("ts", 0) < 120:
+        pct = batt_pct(v)
+        chg = ma is not None and ma < -20          # positive = discharging on this HAT
+        batt = (f"{chr(0x1F50C if chg else 0x1F50B)} {pct}% {v:.2f}V",
+                "ok" if pct > 40 else "warn" if pct > 15 else "bad",
+                "Charging" if chg else "On battery")
+
+    gps = ("🛰️ " + gps_text(s),
+           "dim" if not (live and s.get("gps_on")) else "ok" if s.get("gps_fix") else "warn", "")
+    age = s.get("last_rx_age")
+    last = "none yet" if age is None else f"{dur(age + max(0, lag))} ago"
+    rx = (f"✉️ {s.get('rx_count', 0)} rx · {last}", "", s.get("last_rx_text") or "")
+    if not live:
+        gps = ("🛰️ GPS ?", "dim", "Radio bot not reporting")
+        rx = ("✉️ rx ?", "dim", "Radio bot not reporting")
+
+    # radio clock (GPS-synced) when available, as on the LCD
+    rt = s.get("radio_time")
+    t = time.localtime(rt + max(0, lag) if rt and 1.7e9 < rt < 2.0e9 else now)
+    clock = (f"{time.strftime('%a %b', t)} {t.tm_mday} · "
+             + time.strftime("%I:%M %p", t).lstrip("0"), "", "Node time")
+    return {"batt": batt, "gps": gps, "rx": rx, "clock": clock}
+
+
 def coverage_rows(days=None):
     """meshbot's wardrive log, newest first: (ts, lat, lon, kind, node, hops, snr, rssi, snr_in)."""
     try:
@@ -286,9 +320,9 @@ CSS = """
 @font-face{font-family:'Oswald';font-weight:300 700;font-display:swap;src:url(/static/oswald.woff2) format('woff2')}
 @font-face{font-family:'Bungee Hairline';font-weight:400;font-display:swap;src:url(/static/bungee-hairline.woff2) format('woff2')}
 :root{--red:#e00;--yellow:#ffcc00;--on-red:#fff;--bg:#0a0a0a;--surface:#161616;--surface-border:#2a2a2a;
-  --text:#f2f2f2;--text-dim:#9c9c9c;--red-ink:#ff3b3b;--yellow-ink:#ffcc00;--field:#000}
+  --text:#f2f2f2;--text-dim:#9c9c9c;--red-ink:#ff3b3b;--yellow-ink:#ffcc00;--green-ink:#35d06a;--field:#000}
 @media (prefers-color-scheme:light){:root{--bg:#fff;--surface:#f4f4f4;--surface-border:#e2e2e2;
-  --text:#161616;--text-dim:#555;--red-ink:#d00000;--yellow-ink:#9a6f00;--field:#fff}}
+  --text:#161616;--text-dim:#555;--red-ink:#d00000;--yellow-ink:#9a6f00;--green-ink:#14803c;--field:#fff}}
 *,*::before,*::after{box-sizing:border-box}
 body{margin:0;font:400 16px/1.5 'Oswald',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;
   background-image:radial-gradient(var(--surface-border) 1px,transparent 1px);background-size:26px 26px}
@@ -302,6 +336,10 @@ header nav a{color:var(--text-dim);text-decoration:none;font-size:15px;padding:6
   border:1px solid transparent;transition:color .2s,border-color .2s}
 header nav a:hover{color:var(--text);border-color:var(--surface-border)}
 header nav a.on{color:var(--text);border-color:var(--red)}
+#stat{display:flex;flex-wrap:wrap;gap:2px 18px;width:100%;font-size:14px;font-variant-numeric:tabular-nums}
+#stat span{white-space:nowrap}
+#stat .ok{color:var(--green-ink)}#stat .warn{color:var(--yellow-ink)}#stat .bad{color:var(--red-ink)}#stat .dim{color:var(--text-dim)}
+#stat #s-clock{margin-left:auto}
 main{max-width:900px;margin:0 auto;padding:28px 16px 56px}
 h2.sec{font-weight:500;font-size:1.3rem;margin:28px 0 12px}
 h1.page{font-family:'Bungee Hairline',cursive;font-weight:400;font-size:clamp(1.8rem,5vw,2.6rem);line-height:1.1;margin:0 0 6px}
@@ -358,12 +396,12 @@ table.hist tr:last-child td{border-bottom:0}
   border:1px solid var(--surface-border);border-radius:12px}
 .ev .ei{font-size:18px}
 .ev .et{flex:1;min-width:180px}
-@media (max-width:600px){header nav{margin-left:0;width:100%}header nav a{padding:5px 11px;font-size:14px}}
+@media (max-width:600px){header nav{margin-left:0;width:100%}header nav a{padding:5px 11px;font-size:14px}#stat{gap:2px 10px;font-size:13px}}
 @media (max-width:760px){.tiles{grid-template-columns:repeat(2,1fr);gap:12px}.tile{padding:16px}.tv{font-size:30px;margin:12px 0 4px}.tl{font-size:12px;gap:8px}table.hist th,table.hist td{padding:12px 14px}}
 /* Messages tab: Discord-style sidebar + conversation */
 main.wide{max-width:1300px;padding:14px 16px}
 main.wide h1.page,main.wide>.sub{display:none}
-.chat{display:grid;grid-template-columns:270px 1fr;grid-template-rows:100%;height:calc(100vh - 136px);min-height:420px;
+.chat{display:grid;grid-template-columns:270px 1fr;grid-template-rows:100%;height:calc(100dvh - var(--hdr,87px) - 75px);min-height:420px;
   background:var(--surface);border:1px solid var(--surface-border);border-radius:12px;overflow:hidden}
 #side{border-right:1px solid var(--surface-border);overflow-y:auto;padding:10px 8px;background:var(--bg)}
 #find{width:100%;margin-bottom:6px;font:inherit;padding:7px 10px;background:var(--field);color:var(--text);
@@ -403,7 +441,7 @@ main.wide h1.page,main.wide>.sub{display:none}
 #compose input{flex:1;font:inherit;padding:10px 14px;background:var(--field);color:var(--text);
   border:1px solid var(--surface-border);border-radius:999px}
 @media (max-width:760px){
-  .chat{grid-template-columns:1fr;height:calc(100vh - 140px)}
+  .chat{grid-template-columns:1fr}
   #side{display:none}
   body.side #side{display:block}
   body.side #pane{display:none}
@@ -412,11 +450,30 @@ main.wide h1.page,main.wide>.sub{display:none}
 """
 
 
+HEADER_JS = """
+const hdr = document.querySelector('header');
+new ResizeObserver(() => document.documentElement.style.setProperty('--hdr', hdr.offsetHeight + 'px')).observe(hdr);
+async function stats() {
+  let d = null;
+  try { const r = await fetch('/api/header'); if (r.ok) d = await r.json(); } catch (e) {}
+  for (const e of document.querySelectorAll('#stat span')) {
+    if (d) [e.textContent, e.className, e.title] = d[e.id.slice(2)];
+    else { e.className = 'dim'; e.title = 'Node unreachable'; }
+  }
+}
+setInterval(stats, 5000);
+"""
+
+
+@app.get("/api/header")
+def api_header():
+    response.set_header("Cache-Control", "no-store")
+    return header_stats()
+
+
 def page(active, body, wide=False):
-    s = status()
-    age = s.get("last_rx_age")
-    bar = (f"{s.get('node_name', 'node')} &middot; rx {s.get('rx_count', 0)} &middot; "
-           f"last {'never' if age is None else dur(age)} &middot; {gps_text(s)}")
+    stat = "".join(f'<span id=s-{k} class="{level}" title="{esc(tip)}">{esc(text)}</span>'
+                   for k, (text, level, tip) in header_stats().items())
     nav = "".join(
         f'<a href="{p}" class="{"on" if p == active else ""}">{t}</a>'
         for p, t in TABS)
@@ -425,8 +482,8 @@ def page(active, body, wide=False):
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>{esc(site_title())} &middot; {heading}</title><link rel=icon href="/static/favicon.ico">
 <style>{CSS}{colors.theme_css(*theme_colors())}</style></head><body>
-<header><img class=logo src="/static/logo.png" alt=""><span class=title>{esc(site_title())}</span><nav>{nav}</nav></header>
-<main class="{'wide' if wide else ''}"><h1 class=page>{heading}</h1><p class=sub>{bar}</p>{body}</main></body></html>"""
+<header><img class=logo src="/static/logo.png" alt=""><span class=title>{esc(site_title())}</span><nav>{nav}</nav><div id=stat>{stat}</div></header><script>{HEADER_JS}</script>
+<main class="{'wide' if wide else ''}"><h1 class=page>{heading}</h1><p class=sub>{esc(status().get('node_name', 'node'))}</p>{body}</main></body></html>"""
 
 
 def esc(x):
@@ -1080,6 +1137,20 @@ def netmode(*args, stdin="", detach=False):
         raise HTTPError(400, (r.stderr or "netmode failed").strip())
 
 
+def save_wifi_name(con, nick):
+    c = _json(CONFIG_PATH, {})
+    names = c.setdefault("wifi_names", {})
+    if nick:
+        names[con] = nick
+    else:
+        names.pop(con, None)
+    try:
+        with open(CONFIG_PATH, "w") as fh:
+            json.dump(c, fh, indent=2)
+    except OSError as e:
+        raise HTTPError(500, f"write failed: {e}")
+
+
 def wifi_form():
     ssid = (request.forms.getunicode("ssid") or "").strip()
     psk = request.forms.getunicode("psk") or ""
@@ -1089,20 +1160,24 @@ def wifi_form():
         raise HTTPError(400, "Password must be 8-63 characters (blank for an open network)")
     if re.search(r"[\r\n\0]", ssid + psk):
         raise HTTPError(400, "Line breaks are not allowed")
-    return ssid, psk
+    nick = " ".join((request.forms.getunicode("nick") or "").split())[:24]
+    return ssid, psk, nick
 
 
 def wifi_section():
     ap = ap_live()
+    names = cfg().get("wifi_names") or {}
     rows = ""
     for name, ssid, active, role in wifi_cons():
-        tags = " &middot; ".join(t for t in ("connected" if active else "", role) if t)
+        nick = names.get(name, "")
+        tags = " &middot; ".join(t for t in (esc(ssid) if nick else "", "connected" if active else "", role) if t)
         hid = f'<input type=hidden name=con value="{esc(name)}">'
         rows += f"""<div class=msg><div class=row style="margin:0;justify-content:space-between">
-<span><b>{esc(ssid)}</b> <span class=meta>{tags}</span></span><span class=row style="margin:0">
+<span><b>{esc(nick or ssid)}</b> <span class=meta>{tags}</span></span><span class=row style="margin:0">
 <form method=post action=/wifi/join>{hid}<button class=alt>Connect</button></form>
 <form method=post action=/wifi/del onsubmit="return confirm('Forget this network?')">{hid}<button class=alt>Remove</button></form></span></div>
 <details><summary>Edit</summary><form class=row method=post action=/wifi/edit>{hid}
+<input type=text name=nick value="{esc(nick)}" maxlength=24 placeholder="Nickname">
 <input type=text name=ssid value="{esc(ssid)}" maxlength=32 required placeholder="SSID">
 <input type=password name=psk placeholder="new password (blank = keep)" autocomplete=new-password>
 <button>Save</button></form></details></div>"""
@@ -1110,7 +1185,8 @@ def wifi_section():
 <form class=row method=post action=/wifi/ap><span>Access point: <b>{"ON" if ap else "off"}</b></span>
 <button name=on value={0 if ap else 1}>Turn {"off" if ap else "on"}</button></form>
 {rows or '<p class=sub>No saved networks.</p>'}
-<form class=row method=post action=/wifi/add><input type=text name=ssid maxlength=32 required placeholder="SSID">
+<form class=row method=post action=/wifi/add><input type=text name=nick maxlength=24 placeholder="Nickname (optional)">
+<input type=text name=ssid maxlength=32 required placeholder="SSID">
 <input type=password name=psk placeholder="password (blank = open)" autocomplete=new-password><button>Add network</button></form>
 <p class=sub>Saved networks are tried in order: the preferred home / mobile one first, then the rest.
 Edits to the active network apply when it next reconnects.</p></div>"""
@@ -1220,21 +1296,26 @@ def config_post():
 
 @app.post("/wifi/add")
 def wifi_add():
-    ssid, psk = wifi_form()
+    ssid, psk, nick = wifi_form()
     netmode("wifi", "add", ssid, stdin=psk)
+    save_wifi_name(ssid.replace(":", "_"), nick)
     redirect("/config#wifi")
 
 
 @app.post("/wifi/edit")
 def wifi_edit():
-    ssid, psk = wifi_form()
-    netmode("wifi", "edit", request.forms.getunicode("con") or "", ssid, stdin=psk)
+    ssid, psk, nick = wifi_form()
+    con = request.forms.getunicode("con") or ""
+    netmode("wifi", "edit", con, ssid, stdin=psk)
+    save_wifi_name(con, nick)
     redirect("/config#wifi")
 
 
 @app.post("/wifi/del")
 def wifi_del():
-    netmode("wifi", "del", request.forms.getunicode("con") or "")
+    con = request.forms.getunicode("con") or ""
+    netmode("wifi", "del", con)
+    save_wifi_name(con, "")
     redirect("/config#wifi")
 
 

@@ -62,6 +62,17 @@ _POWER_LSB_W = 0.003048
 _CONFIG_VALUE = (0x00 << 13) | (0x01 << 11) | (0x0D << 7) | (0x0D << 3) | 0x07
 
 
+def batt_pct(v):
+    table = [(4.20, 100), (4.10, 90), (4.00, 80), (3.90, 65), (3.80, 50),
+             (3.70, 35), (3.60, 20), (3.50, 10), (3.30, 3), (3.00, 0)]
+    if v >= table[0][0]:
+        return 100
+    for (v1, p1), (v2, p2) in zip(table, table[1:]):
+        if v >= v2:
+            return round(p2 + (p1 - p2) * (v - v2) / (v1 - v2))
+    return 0
+
+
 class Ina219:
     def __init__(self, bus, addr):
         self.bus = bus

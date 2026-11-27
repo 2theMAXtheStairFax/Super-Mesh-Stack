@@ -18,6 +18,7 @@ import colors
 import fox
 import names
 import regions
+from power import batt_pct
 
 FONT_DIR = '/usr/share/fonts/truetype/dejavu/'
 F_HEAD = ImageFont.truetype(FONT_DIR + 'DejaVuSans-Bold.ttf', 11)
@@ -218,6 +219,32 @@ def read_json(path):
     except (OSError, ValueError):
         return {}
 
+_WIFI = [0.0, []]     # [fetched at, saved networks]
+
+def saved_wifi():
+    """[(connection, ssid, active)] of saved client networks; cached because menus redraw constantly."""
+    if time.monotonic() - _WIFI[0] < 15:
+        return _WIFI[1]
+    def nm(*args):
+        try:
+            return subprocess.run(['nmcli', *args], capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return ''
+    unesc = lambda n: n.replace('\:', ':')
+    active = {unesc(n) for n in nm('-t', '-f', 'NAME', 'connection', 'show', '--active').splitlines()}
+    out = []
+    for line in nm('-t', '-f', 'NAME,TYPE', 'connection', 'show').splitlines():
+        name, _, typ = line.rpartition(':')
+        name = unesc(name)
+        if typ != '802-11-wireless':
+            continue
+        got = nm('-g', '802-11-wireless.ssid,802-11-wireless.mode', 'connection', 'show', name).splitlines()
+        ssid, mode = (got + ['', ''])[:2]
+        if mode != 'ap':
+            out.append((name, ssid or name, name in active))
+    _WIFI[:] = [time.monotonic(), out]
+    return out
+
 def netmode_state():
     """Saved Wi-Fi settings from net/netmode.sh: {'AP': 'on'|'off', 'NET': 'auto'|'home'|'mobile'}."""
     try:
@@ -234,16 +261,6 @@ def now_local():
         t = rt + max(0.0, time.time() - st.get('ts', time.time()))
         return datetime.fromtimestamp(t, TZ)
     return datetime.now(TZ)
-
-def batt_pct(v):
-    table = [(4.20, 100), (4.10, 90), (4.00, 80), (3.90, 65), (3.80, 50),
-             (3.70, 35), (3.60, 20), (3.50, 10), (3.30, 3), (3.00, 0)]
-    if v >= table[0][0]:
-        return 100
-    for (v1, p1), (v2, p2) in zip(table, table[1:]):
-        if v >= v2:
-            return round(p2 + (p1 - p2) * (v - v2) / (v1 - v2))
-    return 0
 
 def ago(sec):
     if sec is None:
@@ -723,7 +740,7 @@ class UI:
                 ("Fox aerial", lambda: self.push("FOX AERIAL", self.fox_items)),
                 ("Send advert", lambda: self.push("Send advert", self.advert_items)),
                 ("Radio control", self.enter_radio),
-                ("Wi-Fi", lambda: self.push("Wi-Fi", self.wifi_items)),
+                ("Wi-Fi", self.open_wifi),
                 ("Settings", lambda: self.push("Settings", self.settings_items)),
                 ("About", lambda: self.push("ABOUT", self.about_items)),
                 ("Restart", lambda: self.ask("Restart?", ['sudo', '/usr/bin/systemctl', 'reboot'])),
@@ -853,22 +870,21 @@ class UI:
         self.show_flash("Fox telemetry sent", "on #aerial")
 
     def wifi_items(self):
-        """AP on/off toggle (live state) plus the client network; '*' marks the saved choice."""
+        """AP on/off (live state), then the saved networks by nickname ('*' = joined; pick one to switch)."""
         st = netmode_state()
         try:
             with open(NETLIVE_FILE) as f:
                 ap_on = f.read().strip() == 'ap'      # includes the rescue AP
         except OSError:
             ap_on = st.get('AP') == 'on'
-        net = st.get('NET', 'auto')
-        mark = lambda n: '*' if not ap_on and net == n else ' '
+        names = read_json(CONFIG_FILE).get('wifi_names') or {}
         return [(f"AP mode: {'ON' if ap_on else 'off'}",
                  lambda: self.netmode(["ap", "off" if ap_on else "on"],
                                       "AP mode off" if ap_on else "AP mode on",
-                                      f"joining {net} Wi-Fi" if ap_on else "SSID from sms-netmode")),
-                (f"{mark('home')}Home Wi-Fi", lambda: self.netmode(["home"], "Wi-Fi: home", "mobile if home not seen")),
-                (f"{mark('mobile')}Mobile router", lambda: self.netmode(["mobile"], "Wi-Fi: mobile", "home if mobile not seen")),
-                (f"{mark('auto')}Auto", lambda: self.netmode(["auto"], "Wi-Fi: auto", "home, else mobile"))]
+                                      "joining saved Wi-Fi" if ap_on else "hosting the node AP")),
+                *[(f"{'*' if on and not ap_on else ' '}{names.get(con) or ssid}"[:22],
+                   lambda c=con, n=names.get(con) or ssid: self.netmode(["wifi", "join", c], f"Joining {n[:18]}", "AP mode off"))
+                  for con, ssid, on in saved_wifi()]]
 
     def netmode(self, args, *msg):
         """Hands off to net/netmode.sh (allowed in sudoers); settings persist across reboots."""
@@ -876,6 +892,10 @@ class UI:
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.stack.clear()
         self.show_flash(*msg)
+
+    def open_wifi(self):
+        _WIFI[0] = 0.0
+        self.push("Wi-Fi", self.wifi_items)
 
     def advert_items(self):
         return [("Zero-hop (nearby)", lambda: self.queue_cmd("advert", "Advert queued")),
